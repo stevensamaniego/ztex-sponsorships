@@ -136,9 +136,10 @@ img { max-width: 100%; height: auto; }
     justify-content: space-between;
 }
 .nav-logo-img {
-    height: 40px;
+    height: 44px;
     width: auto;
     transition: transform 0.3s var(--ease-out-quart);
+    filter: brightness(1.1);
 }
 .nav-logo:hover .nav-logo-img { transform: scale(1.03); }
 .nav-links { display: flex; gap: 2rem; }
@@ -799,9 +800,10 @@ img { max-width: 100%; height: auto; }
     margin-bottom: 3rem;
 }
 .footer-logo {
-    height: 36px;
+    height: 40px;
     width: auto;
     margin-bottom: 0.75rem;
+    filter: brightness(1.1);
 }
 .footer-tagline {
     font-size: 0.85rem;
