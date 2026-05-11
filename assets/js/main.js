@@ -448,10 +448,11 @@ form.addEventListener('submit', async (e) => {
     });
 
     try {
-        // POST to backend endpoint
-        const response = await fetch('/api/submit', {
+        // POST to Formspree (handles email delivery + file attachments)
+        const response = await fetch('https://formspree.io/f/FORMSPREE_ID', {
             method: 'POST',
-            body: formData
+            body: formData,
+            headers: { 'Accept': 'application/json' }
         });
 
         if (!response.ok) throw new Error('Submission failed');
