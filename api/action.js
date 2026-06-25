@@ -1,4 +1,9 @@
 const nodemailer = require('nodemailer');
+const { Redis } = require('@upstash/redis');
+
+const redis = Redis.fromEnv();
+
+const APPROVERS = ['Genaro Roldan', 'Joaquin Royo'];
 
 const TIERS = [
   'Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'
@@ -19,13 +24,14 @@ function createTransporter() {
   });
 }
 
-function reviewForm(type, data, submission) {
+function reviewForm(type, data, submission, lastApprover) {
   const { orgName, contactName, email, eventName, eventDate, sponsorshipAmount, sponsorshipTier } = submission;
   const amount = sponsorshipAmount || '';
   const isApprove = type === 'approve';
   const actionLabel = isApprove ? 'Confirm Approval' : 'Confirm Denial';
   const actionColor = isApprove ? '#1a7a3c' : '#C41E3A';
   const tierOptions = TIERS.map(t => `<option value="${t}"${t === sponsorshipTier ? ' selected' : ''}>${t}</option>`).join('');
+  const approverOptions = APPROVERS.map(a => `<option value="${a}"${a === lastApprover ? ' selected' : ''}>${a}</option>`).join('');
 
   return `<!DOCTYPE html>
 <html>
@@ -88,7 +94,14 @@ function reviewForm(type, data, submission) {
       <input type="hidden" name="data" value="${encodeURIComponent(data)}">
       <input type="hidden" name="type" value="${type}">
 
+      <p class="section-title">Your Signature</p>
+      <div class="field">
+        <label>Approving / Denying As</label>
+        <select name="approverName" id="approverName">${approverOptions}</select>
+      </div>
+
       ${isApprove ? `
+      <hr class="divider">
       <p class="section-title">Adjust Sponsorship</p>
       <div class="field-row">
         <div class="field">
@@ -112,6 +125,12 @@ function reviewForm(type, data, submission) {
       <button type="submit" class="btn">${actionLabel}</button>
     </form>
   </div>
+  <script>
+    // Save approver selection to cookie
+    document.getElementById('approverName').addEventListener('change', function() {
+      document.cookie = 'lastApprover=' + encodeURIComponent(this.value) + '; path=/; max-age=' + (60*60*24*365);
+    });
+  </script>
 </body>
 </html>`;
 }
@@ -246,6 +265,48 @@ function confirmationPage(approved, orgName) {
 </html>`;
 }
 
+function parseCookies(req) {
+  const list = {};
+  const header = req.headers.cookie;
+  if (!header) return list;
+  header.split(';').forEach(cookie => {
+    const [key, ...val] = cookie.trim().split('=');
+    list[key.trim()] = decodeURIComponent(val.join('='));
+  });
+  return list;
+}
+
+function alreadyHandledPage(orgName, handledBy, action) {
+  const color = action === 'approve' ? '#1a7a3c' : '#C41E3A';
+  const label = action === 'approve' ? 'Approved' : 'Denied';
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Already Handled</title>
+  <style>
+    body { margin:0;padding:0;background:#111;font-family:'Helvetica Neue',Arial,sans-serif;
+           display:flex;align-items:center;justify-content:center;min-height:100vh; }
+    .card { background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:48px 56px;
+            text-align:center;max-width:480px; }
+    .badge { display:inline-block;background:${color}22;border:1px solid ${color};color:${color};
+             font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+             padding:6px 18px;border-radius:100px;margin-bottom:24px; }
+    h1 { color:#fff;font-size:24px;font-weight:700;margin:0 0 12px; }
+    p { color:#999;font-size:15px;line-height:1.6;margin:0; }
+    .who { color:#D4AF37;font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Already ${label}</div>
+    <h1>Request Already Handled</h1>
+    <p>This sponsorship request for <span class="who">${orgName}</span> has already been <strong style="color:#fff;">${label.toLowerCase()}</strong> by <span class="who">${handledBy}</span>.<br><br>No further action is needed.</p>
+  </div>
+</body>
+</html>`;
+}
+
 module.exports = async (req, res) => {
   const { type, data } = req.query;
 
@@ -258,7 +319,21 @@ module.exports = async (req, res) => {
     return res.status(400).send('Invalid data.');
   }
 
-  // Show the review/edit form instead of firing immediately
+  // Check if already handled
+  if (submission.submissionId) {
+    const existing = await redis.get(`submission:${submission.submissionId}`);
+    if (existing) {
+      const { approver, action } = typeof existing === 'string' ? JSON.parse(existing) : existing;
+      res.setHeader('Content-Type', 'text/html');
+      return res.status(200).send(alreadyHandledPage(submission.orgName, approver, action));
+    }
+  }
+
+  // Read last approver from cookie
+  const cookies = parseCookies(req);
+  const lastApprover = cookies.lastApprover || '';
+
+  // Show the review/edit form
   res.setHeader('Content-Type', 'text/html');
-  return res.status(200).send(reviewForm(type, data, submission));
+  return res.status(200).send(reviewForm(type, data, submission, lastApprover));
 };

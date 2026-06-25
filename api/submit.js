@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { randomUUID } = require('crypto');
 
 export const config = {
   api: {
@@ -158,8 +159,9 @@ module.exports = async (req, res) => {
     } = req.body;
 
     // Encode submission data for approve/deny links
+    const submissionId = randomUUID();
     const submissionData = Buffer.from(JSON.stringify({
-      orgName, contactName, email, phone,
+      submissionId, orgName, contactName, email, phone,
       eventName, eventDate, sponsorshipAmount, sponsorshipTier
     })).toString('base64');
 

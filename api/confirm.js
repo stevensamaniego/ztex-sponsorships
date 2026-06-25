@@ -1,4 +1,7 @@
 const nodemailer = require('nodemailer');
+const { Redis } = require('@upstash/redis');
+
+const redis = Redis.fromEnv();
 
 function createTransporter() {
   return nodemailer.createTransport({
@@ -13,7 +16,7 @@ function createTransporter() {
   });
 }
 
-function buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes) {
+function buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes, approverName) {
   const { orgName, contactName, email, phone, eventName, eventDate, sponsorshipTier, sponsorshipAmount } = submission;
   const finalAmount = adjustedAmount || sponsorshipAmount;
   const finalTier = adjustedTier || sponsorshipTier;
@@ -98,10 +101,15 @@ function buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier,
             </table>
 
             ${bossNotes ? `
-            <table width="100%" cellpadding="0" cellspacing="0">
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
               <tr><td style="background:#f8f8f8;border-left:3px solid #D4AF37;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#b8960a;">Notes from Leadership</td></tr>
               <tr><td style="padding:14px;font-size:14px;color:#444;line-height:1.7;">${bossNotes}</td></tr>
             </table>` : ''}
+
+            ${approverName ? `
+            <p style="margin:24px 0 0;font-size:13px;color:#aaa;border-top:1px solid #f0f0f0;padding-top:16px;">
+              Decision made by: <strong style="color:#444;">${approverName}</strong>
+            </p>` : ''}
 
           </td>
         </tr>
@@ -161,7 +169,7 @@ function confirmationPage(approved, orgName) {
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
-  const { type, data, adjustedAmount, adjustedTier, bossNotes } = req.body;
+  const { type, data, adjustedAmount, adjustedTier, bossNotes, approverName } = req.body;
 
   if (!type || !data) return res.status(400).send('Invalid request.');
 
@@ -175,6 +183,23 @@ module.exports = async (req, res) => {
   const approved = type === 'approve';
   const marketingEmail = process.env.MARKETING_EMAIL || 'steven@ztexconstruction.com, bchavez@ztexconstruction.com';
 
+  // Check + lock submission to prevent double action
+  if (submission.submissionId) {
+    const key = `submission:${submission.submissionId}`;
+    const existing = await redis.get(key);
+    if (existing) {
+      const { approver, action } = typeof existing === 'string' ? JSON.parse(existing) : existing;
+      res.setHeader('Content-Type', 'text/html');
+      return res.status(200).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Already Handled</title>
+        <style>body{margin:0;background:#111;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+        .c{background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:48px;text-align:center;max-width:480px;}
+        h1{color:#fff;margin:0 0 12px;}p{color:#999;font-size:15px;line-height:1.6;margin:0;}.g{color:#D4AF37;font-weight:600;}</style></head>
+        <body><div class="c"><h1>Already Handled</h1><p>This request was already <strong style="color:#fff;">${action}d</strong> by <span class="g">${approver}</span>. No further action needed.</p></div></body></html>`);
+    }
+    // Lock it — store for 90 days
+    await redis.set(key, JSON.stringify({ approver: approverName || 'Unknown', action: type }), { ex: 60 * 60 * 24 * 90 });
+  }
+
   try {
     const transporter = createTransporter();
     await transporter.sendMail({
@@ -183,7 +208,7 @@ module.exports = async (req, res) => {
       subject: approved
         ? `✅ Sponsorship Approved — ${submission.orgName}`
         : `❌ Sponsorship Denied — ${submission.orgName}`,
-      html: buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes)
+      html: buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes, approverName)
     });
 
     res.setHeader('Content-Type', 'text/html');
