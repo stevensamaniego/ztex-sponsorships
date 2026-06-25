@@ -17,6 +17,7 @@
   "routes": [
     { "src": "/api/submit", "dest": "/api/submit.js" },
     { "src": "/api/action", "dest": "/api/action.js" },
+    { "src": "/api/confirm", "dest": "/api/confirm.js" },
     { "src": "/thanks", "dest": "/thanks.html" },
     { "src": "/assets/(.*)", "dest": "/assets/$1" },
     { "src": "/", "dest": "/index.html" }

@@ -1,9 +1,5 @@
 const nodemailer = require('nodemailer');
 
-const TIERS = [
-  'Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'
-];
-
 function createTransporter() {
   return nodemailer.createTransport({
     host: 'smtp.office365.com',
@@ -13,118 +9,24 @@ function createTransporter() {
       user: 'timeclock@ztexconstruction.com',
       pass: process.env.SMTP_PASSWORD
     },
-    tls: {
-      ciphers: 'SSLv3'
-    }
+    tls: { ciphers: 'SSLv3' }
   });
 }
 
-function reviewForm(type, data, submission) {
-  const { orgName, contactName, email, eventName, eventDate, sponsorshipAmount, sponsorshipTier } = submission;
-  const amount = sponsorshipAmount || '';
-  const isApprove = type === 'approve';
-  const actionLabel = isApprove ? 'Confirm Approval' : 'Confirm Denial';
-  const actionColor = isApprove ? '#1a7a3c' : '#C41E3A';
-  const tierOptions = TIERS.map(t => `<option value="${t}"${t === sponsorshipTier ? ' selected' : ''}>${t}</option>`).join('');
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${isApprove ? 'Approve' : 'Deny'} Sponsorship Request</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #111; font-family: 'Helvetica Neue', Arial, sans-serif;
-           display: flex; align-items: flex-start; justify-content: center;
-           min-height: 100vh; padding: 40px 16px; }
-    .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px;
-            padding: 40px 48px; max-width: 560px; width: 100%; }
-    .logo { font-size: 14px; font-weight: 700; letter-spacing: 3px; color: #fff;
-            text-transform: uppercase; margin-bottom: 28px; padding-bottom: 20px;
-            border-bottom: 1px solid #2a2a2a; }
-    .logo span { color: #C41E3A; }
-    h1 { color: #fff; font-size: 22px; font-weight: 700; margin-bottom: 6px; }
-    .subtitle { color: #777; font-size: 14px; margin-bottom: 28px; }
-    .info-grid { background: #111; border-radius: 6px; padding: 16px 20px;
-                 margin-bottom: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .info-item label { display: block; font-size: 11px; color: #555;
-                       text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
-    .info-item span { font-size: 14px; color: #ddd; font-weight: 500; }
-    .section-title { font-size: 11px; font-weight: 700; letter-spacing: 2px;
-                     text-transform: uppercase; color: #C41E3A; margin-bottom: 16px; }
-    .field { margin-bottom: 18px; }
-    .field label { display: block; font-size: 12px; color: #999; margin-bottom: 7px;
-                   font-weight: 500; letter-spacing: 0.5px; }
-    .field input, .field select, .field textarea {
-      width: 100%; background: #111; border: 1px solid #333; border-radius: 5px;
-      padding: 10px 14px; color: #fff; font-size: 14px; font-family: inherit;
-      transition: border-color 0.2s; outline: none; }
-    .field input:focus, .field select, .field textarea:focus { border-color: #C41E3A; }
-    .field select option { background: #1a1a1a; }
-    .field textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
-    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    .btn { width: 100%; padding: 14px; background: ${actionColor}; color: #fff;
-           font-size: 15px; font-weight: 700; border: none; border-radius: 5px;
-           cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }
-    .btn:hover { opacity: 0.9; }
-    .divider { border: none; border-top: 1px solid #2a2a2a; margin: 24px 0; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="logo">ZTEX <span>Construction</span></div>
-    <h1>${isApprove ? '✅ Approve Request' : '❌ Deny Request'}</h1>
-    <p class="subtitle">${isApprove ? 'Review and adjust details before confirming approval.' : 'Add any notes for the marketing team before confirming denial.'}</p>
-
-    <div class="info-grid">
-      <div class="info-item"><label>Organization</label><span>${orgName}</span></div>
-      <div class="info-item"><label>Contact</label><span>${contactName}</span></div>
-      <div class="info-item"><label>Event</label><span>${eventName}</span></div>
-      <div class="info-item"><label>Email</label><span>${email}</span></div>
-    </div>
-
-    <form method="POST" action="/api/confirm">
-      <input type="hidden" name="data" value="${encodeURIComponent(data)}">
-      <input type="hidden" name="type" value="${type}">
-
-      ${isApprove ? `
-      <p class="section-title">Adjust Sponsorship</p>
-      <div class="field-row">
-        <div class="field">
-          <label>Sponsorship Amount ($)</label>
-          <input type="text" name="adjustedAmount" value="${amount}" placeholder="0.00">
-        </div>
-        <div class="field">
-          <label>Sponsorship Tier</label>
-          <select name="adjustedTier">${tierOptions}</select>
-        </div>
-      </div>
-      ` : ''}
-
-      <hr class="divider">
-      <p class="section-title">Notes for Marketing Team</p>
-      <div class="field">
-        <label>Additional Notes <span style="color:#555;font-weight:400;">(optional)</span></label>
-        <textarea name="bossNotes" placeholder="Any instructions or context for the marketing team..."></textarea>
-      </div>
-
-      <button type="submit" class="btn">${actionLabel}</button>
-    </form>
-  </div>
-</body>
-</html>`;
-}
-
-function buildMarketingEmail(submission, approved) {
-  const { orgName, contactName, email, phone, eventName, eventDate, sponsorshipAmount, sponsorshipTier } = submission;
-  const amount = sponsorshipAmount ? `$${sponsorshipAmount}` : 'Not specified';
+function buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes) {
+  const { orgName, contactName, email, phone, eventName, eventDate, sponsorshipTier, sponsorshipAmount } = submission;
+  const finalAmount = adjustedAmount || sponsorshipAmount;
+  const finalTier = adjustedTier || sponsorshipTier;
+  const displayAmount = finalAmount ? `$${finalAmount}` : 'Not specified';
   const date = eventDate ? new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not specified';
   const statusColor = approved ? '#1a7a3c' : '#C41E3A';
   const statusLabel = approved ? '✅ APPROVED' : '❌ DENIED';
   const statusMessage = approved
     ? 'A sponsorship request has been <strong>approved</strong> by leadership. Please proceed with the sponsorship process and follow up with the contact below.'
     : 'A sponsorship request has been <strong>denied</strong> by leadership. No further action is required.';
+
+  const amountChanged = adjustedAmount && adjustedAmount !== sponsorshipAmount;
+  const tierChanged = adjustedTier && adjustedTier !== sponsorshipTier;
 
   return `
 <!DOCTYPE html>
@@ -135,7 +37,6 @@ function buildMarketingEmail(submission, approved) {
     <tr><td align="center">
       <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
 
-        <!-- Header -->
         <tr>
           <td style="background:#1a1a1a;padding:28px 40px;text-align:center;">
             <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:2px;">ZTEX CONSTRUCTION</span>
@@ -143,14 +44,12 @@ function buildMarketingEmail(submission, approved) {
           </td>
         </tr>
 
-        <!-- Status Banner -->
         <tr>
           <td style="background:${statusColor};padding:16px 40px;text-align:center;">
             <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:1px;">${statusLabel}</span>
           </td>
         </tr>
 
-        <!-- Body -->
         <tr>
           <td style="padding:36px 40px;">
             <p style="margin:0 0 28px;font-size:15px;color:#444;line-height:1.7;">${statusMessage}</p>
@@ -181,19 +80,32 @@ function buildMarketingEmail(submission, approved) {
                 <td style="padding:10px 14px;font-size:13px;color:#888;border-bottom:1px solid #f0f0f0;">Event Date</td>
                 <td style="padding:10px 14px;font-size:14px;color:#222;border-bottom:1px solid #f0f0f0;">${date}</td>
               </tr>
+              ${approved ? `
               <tr>
-                <td style="padding:10px 14px;font-size:13px;color:#888;border-bottom:1px solid #f0f0f0;">Amount</td>
-                <td style="padding:10px 14px;font-size:14px;color:#222;font-weight:600;border-bottom:1px solid #f0f0f0;">${amount}</td>
+                <td style="padding:10px 14px;font-size:13px;color:#888;border-bottom:1px solid #f0f0f0;">Approved Amount</td>
+                <td style="padding:10px 14px;font-size:14px;color:#222;font-weight:700;border-bottom:1px solid #f0f0f0;">
+                  ${displayAmount}
+                  ${amountChanged ? `<span style="font-size:11px;color:#888;font-weight:400;margin-left:6px;">(requested: $${sponsorshipAmount})</span>` : ''}
+                </td>
               </tr>
               <tr>
-                <td style="padding:10px 14px;font-size:13px;color:#888;">Tier</td>
-                <td style="padding:10px 14px;font-size:14px;color:#222;">${sponsorshipTier || 'Not specified'}</td>
-              </tr>
+                <td style="padding:10px 14px;font-size:13px;color:#888;border-bottom:1px solid #f0f0f0;">Approved Tier</td>
+                <td style="padding:10px 14px;font-size:14px;color:#222;border-bottom:1px solid #f0f0f0;">
+                  ${finalTier}
+                  ${tierChanged ? `<span style="font-size:11px;color:#888;font-weight:400;margin-left:6px;">(requested: ${sponsorshipTier})</span>` : ''}
+                </td>
+              </tr>` : ''}
             </table>
+
+            ${bossNotes ? `
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr><td style="background:#f8f8f8;border-left:3px solid #D4AF37;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#b8960a;">Notes from Leadership</td></tr>
+              <tr><td style="padding:14px;font-size:14px;color:#444;line-height:1.7;">${bossNotes}</td></tr>
+            </table>` : ''}
+
           </td>
         </tr>
 
-        <!-- Footer -->
         <tr>
           <td style="background:#1a1a1a;padding:20px 40px;text-align:center;">
             <p style="margin:0;color:#666;font-size:11px;">© 2026 ZTEX Construction, Inc. — Sponsorship Portal Notification</p>
@@ -247,7 +159,9 @@ function confirmationPage(approved, orgName) {
 }
 
 module.exports = async (req, res) => {
-  const { type, data } = req.query;
+  if (req.method !== 'POST') return res.status(405).send('Method not allowed');
+
+  const { type, data, adjustedAmount, adjustedTier, bossNotes } = req.body;
 
   if (!type || !data) return res.status(400).send('Invalid request.');
 
@@ -258,7 +172,25 @@ module.exports = async (req, res) => {
     return res.status(400).send('Invalid data.');
   }
 
-  // Show the review/edit form instead of firing immediately
-  res.setHeader('Content-Type', 'text/html');
-  return res.status(200).send(reviewForm(type, data, submission));
+  const approved = type === 'approve';
+  const marketingEmail = process.env.MARKETING_EMAIL || 'steven@ztexconstruction.com, bchavez@ztexconstruction.com';
+
+  try {
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: '"ZTEX Sponsorships" <sponsorships@ztexconstruction.com>',
+      to: marketingEmail,
+      subject: approved
+        ? `✅ Sponsorship Approved — ${submission.orgName}`
+        : `❌ Sponsorship Denied — ${submission.orgName}`,
+      html: buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes)
+    });
+
+    res.setHeader('Content-Type', 'text/html');
+    return res.status(200).send(confirmationPage(approved, submission.orgName));
+
+  } catch (err) {
+    console.error('Confirm error:', err);
+    return res.status(500).send('Failed to send notification. Please try again.');
+  }
 };
