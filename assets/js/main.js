@@ -430,36 +430,44 @@ form.addEventListener('submit', async (e) => {
     const submitBtn = form.querySelector('.btn-submit');
     submitBtn.classList.add('loading');
 
-    // Build FormData
-    const formData = new FormData();
-    formData.append('orgName', document.getElementById('orgName').value.trim());
-    formData.append('contactName', document.getElementById('contactName').value.trim());
-    formData.append('email', document.getElementById('email').value.trim());
-    formData.append('phone', document.getElementById('phone').value.trim());
-    formData.append('eventName', document.getElementById('eventName').value.trim());
-    formData.append('eventDate', document.getElementById('eventDate').value);
-    formData.append('sponsorshipAmount', document.getElementById('sponsorshipAmount').value.trim());
-    formData.append('sponsorshipTier', document.getElementById('sponsorshipTier').value);
-    formData.append('description', document.getElementById('description').value.trim());
-    formData.append('additionalNotes', document.getElementById('additionalNotes').value.trim());
+    // Convert files to base64
+    const encodedFiles = await Promise.all(uploadedFiles.map(file => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({
+            name: file.name,
+            type: file.type,
+            data: reader.result.split(',')[1]
+        });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    })));
 
-    uploadedFiles.forEach(file => {
-        formData.append('files', file);
-    });
+    // Build JSON payload
+    const payload = {
+        orgName: document.getElementById('orgName').value.trim(),
+        contactName: document.getElementById('contactName').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        phone: document.getElementById('phone').value.trim(),
+        eventName: document.getElementById('eventName').value.trim(),
+        eventDate: document.getElementById('eventDate').value,
+        sponsorshipAmount: document.getElementById('sponsorshipAmount').value.trim(),
+        sponsorshipTier: document.getElementById('sponsorshipTier').value,
+        description: document.getElementById('description').value.trim(),
+        additionalNotes: document.getElementById('additionalNotes').value.trim(),
+        files: encodedFiles
+    };
 
     try {
-        // POST to Formspree (handles email delivery + file attachments)
-        const response = await fetch('https://formspree.io/f/mojoepqv', {
+        const response = await fetch('/api/submit', {
             method: 'POST',
-            body: formData,
-            headers: { 'Accept': 'application/json' }
+            body: JSON.stringify(payload),
+            headers: { 'Content-Type': 'application/json' }
         });
 
         if (!response.ok) throw new Error('Submission failed');
 
-        // Show success
-        form.style.display = 'none';
-        document.getElementById('formSuccess').classList.add('active');
+        // Redirect to thank you page
+        window.location.href = '/thanks';
     } catch (err) {
         console.error('Submission error:', err);
         showToast('Something went wrong. Please try again or call (915) 591-6900.');
