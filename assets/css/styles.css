@@ -888,3 +888,28 @@ img { max-width: 100%; height: auto; }
     .form-progress { gap: 0; }
     .progress-connector { width: 24px; margin: 0 0.35rem; }
 }
+
+/* Social Icons */
+.footer-socials {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.footer-social-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(245, 240, 232, 0.15);
+    color: rgba(245, 240, 232, 0.5);
+    transition: border-color 0.2s, color 0.2s, transform 0.2s;
+}
+
+.footer-social-link:hover {
+    border-color: #D4AF37;
+    color: #D4AF37;
+    transform: translateY(-2px);
+}
