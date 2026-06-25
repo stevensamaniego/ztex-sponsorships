@@ -102,7 +102,7 @@ function reviewForm(type, data, submission, lastApprover) {
 
       ${isApprove ? `
       <hr class="divider">
-      <p class="section-title">Adjust Sponsorship</p>
+      <p class="section-title">Adjust Sponsorship <span style="font-weight:400;color:#555;text-transform:none;letter-spacing:0;font-size:11px;">(optional)</span></p>
       <div class="field-row">
         <div class="field">
           <label>Sponsorship Amount ($)</label>
