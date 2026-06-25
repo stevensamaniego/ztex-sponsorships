@@ -177,7 +177,7 @@ module.exports = async (req, res) => {
     const transporter = createTransporter();
 
     await transporter.sendMail({
-      from: '"ZTEX Sponsorships" <timeclock@ztexconstruction.com>',
+      from: '"ZTEX Sponsorships" <sponsorships@ztexconstruction.com>',
       to: 'sponsorships@ztexconstruction.com',
       replyTo: email,
       subject: `New Sponsorship Request — ${orgName}`,

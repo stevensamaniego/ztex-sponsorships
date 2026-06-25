@@ -165,7 +165,7 @@ module.exports = async (req, res) => {
   try {
     const transporter = createTransporter();
     await transporter.sendMail({
-      from: '"ZTEX Sponsorships" <timeclock@ztexconstruction.com>',
+      from: '"ZTEX Sponsorships" <sponsorships@ztexconstruction.com>',
       to: marketingEmail,
       subject: approved
         ? `✅ Sponsorship Approved — ${submission.orgName}`
