@@ -160,7 +160,7 @@ module.exports = async (req, res) => {
   }
 
   const approved = type === 'approve';
-  const marketingEmail = process.env.MARKETING_EMAIL || 'steven@ztexconstruction.com';
+  const marketingEmail = process.env.MARKETING_EMAIL || 'steven@ztexconstruction.com, ben@ztexconstruction.com';
 
   try {
     const transporter = createTransporter();
