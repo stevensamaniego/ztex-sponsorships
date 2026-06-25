@@ -900,16 +900,18 @@ img { max-width: 100%; height: auto; }
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
-    border: 1px solid rgba(245, 240, 232, 0.15);
-    color: rgba(245, 240, 232, 0.5);
-    transition: border-color 0.2s, color 0.2s, transform 0.2s;
+    background: rgba(193, 14, 32, 0.15);
+    border: 1px solid rgba(193, 14, 32, 0.4);
+    color: #c10e20;
+    transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
 }
 
 .footer-social-link:hover {
-    border-color: #D4AF37;
-    color: #D4AF37;
+    background: #c10e20;
+    border-color: #c10e20;
+    color: #fff;
     transform: translateY(-2px);
 }
