@@ -32,7 +32,7 @@ function buildBossEmail(data, approveUrl, denyUrl) {
   } = data;
 
   const tier = sponsorshipTier || 'Not specified';
-  const amount = sponsorshipAmount ? `$${sponsorshipAmount}` : 'Not specified';
+  const amount = sponsorshipAmount ? `$${String(sponsorshipAmount).replace(/^\$+/, '')}` : 'Not specified';
   const date = eventDate ? new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not specified';
 
   return `
