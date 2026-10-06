@@ -1,5 +1,8 @@
 const nodemailer = require('nodemailer');
-const { randomUUID } = require('crypto');
+const { Redis } = require('@upstash/redis');
+const { SUBMISSION_TTL_SECONDS, newToken, pendingKey, escapeHtml } = require('../lib/security');
+
+const redis = Redis.fromEnv();
 
 export const config = {
   api: {
@@ -25,15 +28,18 @@ function createTransporter() {
 }
 
 function buildBossEmail(data, approveUrl, denyUrl) {
-  const {
-    orgName, contactName, email, phone,
-    eventName, eventDate, sponsorshipAmount, sponsorshipTier,
-    description, additionalNotes
-  } = data;
+  const orgName = escapeHtml(data.orgName);
+  const contactName = escapeHtml(data.contactName);
+  const email = escapeHtml(data.email);
+  const phone = escapeHtml(data.phone);
+  const eventName = escapeHtml(data.eventName);
+  const description = escapeHtml(data.description);
+  const additionalNotes = escapeHtml(data.additionalNotes);
+  const { eventDate, sponsorshipAmount, sponsorshipTier } = data;
 
-  const tier = sponsorshipTier || 'Not specified';
-  const amount = sponsorshipAmount ? `$${String(sponsorshipAmount).replace(/^\$+/, '')}` : 'Not specified';
-  const date = eventDate ? new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not specified';
+  const tier = escapeHtml(sponsorshipTier || 'Not specified');
+  const amount = sponsorshipAmount ? `$${escapeHtml(String(sponsorshipAmount).replace(/^\$+/, ''))}` : 'Not specified';
+  const date = eventDate ? escapeHtml(new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })) : 'Not specified';
 
   return `
 <!DOCTYPE html>
@@ -158,16 +164,16 @@ module.exports = async (req, res) => {
       description, additionalNotes, files
     } = req.body;
 
-    // Encode submission data for approve/deny links
-    const submissionId = randomUUID();
-    const submissionData = Buffer.from(JSON.stringify({
-      submissionId, orgName, contactName, email, phone,
+    // Store the submission server-side; links carry only an unguessable token
+    const token = newToken();
+    await redis.set(pendingKey(token), JSON.stringify({
+      orgName, contactName, email, phone,
       eventName, eventDate, sponsorshipAmount, sponsorshipTier
-    })).toString('base64');
+    }), { ex: SUBMISSION_TTL_SECONDS });
 
     const baseUrl = 'https://sponsorships.ztexconstruction.com';
-    const approveUrl = `${baseUrl}/api/action?type=approve&data=${encodeURIComponent(submissionData)}`;
-    const denyUrl = `${baseUrl}/api/action?type=deny&data=${encodeURIComponent(submissionData)}`;
+    const approveUrl = `${baseUrl}/api/action?type=approve&id=${token}`;
+    const denyUrl = `${baseUrl}/api/action?type=deny&id=${token}`;
 
     // Build file attachments
     const attachments = (files || []).map(f => ({
@@ -182,7 +188,7 @@ module.exports = async (req, res) => {
       from: '"ZTEX Sponsorships" <sponsorships@ztexconstruction.com>',
       to: 'sponsorships@ztexconstruction.com',
       replyTo: email,
-      subject: `New Sponsorship Request — ${orgName}`,
+      subject: `New Sponsorship Request — ${String(orgName || '').replace(/[\r\n]+/g, ' ')}`,
       html: buildBossEmail(req.body, approveUrl, denyUrl),
       attachments
     });

@@ -62,6 +62,14 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 ### 2026-10-06 — Documentation
 - Project memory note reconstructed from git history; this BUILD.md added.
 
+### 2026-10-06 — Secure approve/deny links + HTML escaping
+- Approve/deny links used to carry the whole request as unsigned base64, so anyone could forge an "Approved" email to marketing with any org/amount. Submissions are now stored server-side in Redis (`pending:<token>`, 90-day TTL) and links carry only a random 256-bit token (`lib/security.js`).
+- All user-supplied fields are HTML-escaped in the boss email, review page, and marketing email (previously raw → script injection on the approver's page).
+- Decision lock is now atomic (Redis `SET NX`) and is released if the marketing email fails, so a failed send no longer leaves a request stuck as "already handled".
+- `/api/confirm` only accepts known approvers and tiers. Removed dead duplicate email/page builders from `action.js`.
+- Verified locally with 15 mocked end-to-end checks (forged/made-up links rejected, escaping, retry after email failure, double-decision blocked).
+- Note: approve/deny links in emails sent before this deploy no longer work; those requests need to be resubmitted.
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.

@@ -1,5 +1,9 @@
 const nodemailer = require('nodemailer');
 const { Redis } = require('@upstash/redis');
+const { SUBMISSION_TTL_SECONDS, isValidToken, pendingKey, decisionKey, escapeHtml, parseStored } = require('../lib/security');
+
+const APPROVERS = ['Genaro Roldan', 'Joaquin Royo'];
+const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'];
 
 const redis = Redis.fromEnv();
 
@@ -20,14 +24,24 @@ function stripDollar(val) {
   return val ? String(val).replace(/^\$+/, '') : '';
 }
 
-function buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes, approverName) {
-  const { orgName, contactName, email, phone, eventName, eventDate, sponsorshipTier, sponsorshipAmount } = submission;
+function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTier, rawBossNotes, rawApproverName) {
+  const orgName = escapeHtml(submission.orgName);
+  const contactName = escapeHtml(submission.contactName);
+  const email = escapeHtml(submission.email);
+  const phone = escapeHtml(submission.phone);
+  const eventName = escapeHtml(submission.eventName);
+  const sponsorshipTier = escapeHtml(submission.sponsorshipTier);
+  const { eventDate, sponsorshipAmount } = submission;
+  const adjustedAmount = escapeHtml(rawAdjustedAmount);
+  const adjustedTier = escapeHtml(rawAdjustedTier);
+  const bossNotes = escapeHtml(rawBossNotes);
+  const approverName = escapeHtml(rawApproverName);
 
-  const finalAmount = stripDollar(adjustedAmount || sponsorshipAmount);
+  const finalAmount = stripDollar(adjustedAmount || escapeHtml(sponsorshipAmount));
   const finalTier = adjustedTier || sponsorshipTier;
   const displayAmount = finalAmount ? '$' + finalAmount : 'Not specified';
-  const originalAmount = stripDollar(sponsorshipAmount);
-  const date = eventDate ? new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not specified';
+  const originalAmount = stripDollar(escapeHtml(sponsorshipAmount));
+  const date = eventDate ? escapeHtml(new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })) : 'Not specified';
   const statusColor = approved ? '#1a7a3c' : '#C41E3A';
   const statusLabel = approved ? '✅ APPROVED' : '❌ DENIED';
   const statusMessage = approved
@@ -133,7 +147,8 @@ function buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier,
 </html>`;
 }
 
-function confirmationPage(approved, orgName) {
+function confirmationPage(approved, rawOrgName) {
+  const orgName = escapeHtml(rawOrgName);
   const color = approved ? '#1a7a3c' : '#C41E3A';
   const label = approved ? '✅ Approved' : '❌ Denied';
   const msg = approved
@@ -172,38 +187,47 @@ function confirmationPage(approved, orgName) {
 </html>`;
 }
 
+function alreadyHandledHtml(parsed) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Already Handled</title>
+        <style>body{margin:0;background:#111;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+        .c{background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:48px;text-align:center;max-width:480px;}
+        h1{color:#fff;margin:0 0 12px;}p{color:#999;font-size:15px;line-height:1.6;margin:0;}.g{color:#D4AF37;font-weight:600;}</style></head>
+        <body><div class="c"><h1>Already Handled</h1><p>This request was already <strong style="color:#fff;">${escapeHtml(parsed.action)}d</strong> by <span class="g">${escapeHtml(parsed.approver)}</span>. No further action needed.</p></div></body></html>`;
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
-  const { type, data, adjustedAmount, adjustedTier, bossNotes, approverName } = req.body;
+  const { type, id, adjustedAmount, adjustedTier, bossNotes, approverName } = req.body;
 
-  if (!type || !data) return res.status(400).send('Invalid request.');
-
-  let submission;
-  try {
-    submission = JSON.parse(Buffer.from(decodeURIComponent(data), 'base64').toString());
-  } catch {
-    return res.status(400).send('Invalid data.');
+  if ((type !== 'approve' && type !== 'deny') || !isValidToken(id)) {
+    return res.status(400).send('Invalid request.');
   }
+  if (!APPROVERS.includes(approverName)) return res.status(400).send('Invalid approver.');
+  if (adjustedTier && !TIERS.includes(adjustedTier)) return res.status(400).send('Invalid tier.');
+
+  const stored = await redis.get(pendingKey(id));
+  if (!stored) {
+    const existing = await redis.get(decisionKey(id));
+    if (existing) {
+      res.setHeader('Content-Type', 'text/html');
+      return res.status(200).send(alreadyHandledHtml(parseStored(existing)));
+    }
+    return res.status(404).send('This link is invalid or has expired.');
+  }
+  const submission = parseStored(stored);
 
   const approved = type === 'approve';
   const marketingEmail = process.env.MARKETING_EMAIL || 'steven@ztexconstruction.com, bchavez@ztexconstruction.com';
 
-  // Check + lock to prevent double action
-  if (submission.submissionId) {
-    const key = `submission:${submission.submissionId}`;
+  // Atomically claim the decision so two approvers can't both act
+  const key = decisionKey(id);
+  const decision = JSON.stringify({ approver: approverName, action: type, orgName: submission.orgName });
+  const claimed = await redis.set(key, decision, { nx: true, ex: SUBMISSION_TTL_SECONDS });
+  if (!claimed) {
     const existing = await redis.get(key);
-    if (existing) {
-      const parsed = typeof existing === 'string' ? JSON.parse(existing) : existing;
-      res.setHeader('Content-Type', 'text/html');
-      return res.status(200).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Already Handled</title>
-        <style>body{margin:0;background:#111;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}
-        .c{background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:48px;text-align:center;max-width:480px;}
-        h1{color:#fff;margin:0 0 12px;}p{color:#999;font-size:15px;line-height:1.6;margin:0;}.g{color:#D4AF37;font-weight:600;}</style></head>
-        <body><div class="c"><h1>Already Handled</h1><p>This request was already <strong style="color:#fff;">${parsed.action}d</strong> by <span class="g">${parsed.approver}</span>. No further action needed.</p></div></body></html>`);
-    }
-    // Lock for 90 days
-    await redis.set(key, JSON.stringify({ approver: approverName || 'Unknown', action: type }), { ex: 60 * 60 * 24 * 90 });
+    res.setHeader('Content-Type', 'text/html');
+    return res.status(200).send(alreadyHandledHtml(parseStored(existing)));
   }
 
   try {
@@ -212,15 +236,18 @@ module.exports = async (req, res) => {
       from: '"ZTEX Sponsorships" <sponsorships@ztexconstruction.com>',
       to: marketingEmail,
       subject: approved
-        ? `✅ Sponsorship Approved — ${submission.orgName}`
-        : `❌ Sponsorship Denied — ${submission.orgName}`,
+        ? `✅ Sponsorship Approved — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`
+        : `❌ Sponsorship Denied — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`,
       html: buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes, approverName)
     });
 
+    await redis.del(pendingKey(id));
     res.setHeader('Content-Type', 'text/html');
     return res.status(200).send(confirmationPage(approved, submission.orgName));
 
   } catch (err) {
+    // Release the claim so the approver can retry once email works again
+    await redis.del(key);
     console.error('Confirm error:', err);
     return res.status(500).send('Failed to send notification. Please try again.');
   }
