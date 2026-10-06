@@ -1,15 +1,14 @@
 const { Redis } = require('@upstash/redis');
 const { isValidToken, pendingKey, decisionKey, escapeHtml, parseStored } = require('../lib/security');
+const { getSettings } = require('../lib/settings');
 
 const redis = Redis.fromEnv();
-
-const APPROVERS = ['Genaro Roldan', 'Joaquin Royo'];
 
 const TIERS = [
   'Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'
 ];
 
-function reviewForm(type, token, submission, lastApprover) {
+function reviewForm(type, token, submission, lastApprover, approvers) {
   const orgName = escapeHtml(submission.orgName);
   const contactName = escapeHtml(submission.contactName);
   const email = escapeHtml(submission.email);
@@ -20,7 +19,7 @@ function reviewForm(type, token, submission, lastApprover) {
   const actionLabel = isApprove ? 'Confirm Approval' : 'Confirm Denial';
   const actionColor = isApprove ? '#1a7a3c' : '#C41E3A';
   const tierOptions = TIERS.map(t => `<option value="${t}"${t === sponsorshipTier ? ' selected' : ''}>${t}</option>`).join('');
-  const approverOptions = APPROVERS.map(a => `<option value="${a}"${a === lastApprover ? ' selected' : ''}>${a}</option>`).join('');
+  const approverOptions = approvers.map(a => `<option value="${escapeHtml(a)}"${a === lastApprover ? ' selected' : ''}>${escapeHtml(a)}</option>`).join('');
 
   return `<!DOCTYPE html>
 <html>
@@ -193,5 +192,6 @@ module.exports = async (req, res) => {
 
   // Show the review/edit form
   res.setHeader('Content-Type', 'text/html');
-  return res.status(200).send(reviewForm(type, id, submission, lastApprover));
+  const { approvers } = await getSettings(redis);
+  return res.status(200).send(reviewForm(type, id, submission, lastApprover, approvers));
 };

@@ -2,7 +2,7 @@ const nodemailer = require('nodemailer');
 const { Redis } = require('@upstash/redis');
 const { SUBMISSION_TTL_SECONDS, isValidToken, pendingKey, decisionKey, escapeHtml, parseStored } = require('../lib/security');
 
-const APPROVERS = ['Genaro Roldan', 'Joaquin Royo'];
+const { getSettings } = require('../lib/settings');
 const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'];
 
 const redis = Redis.fromEnv();
@@ -203,7 +203,8 @@ module.exports = async (req, res) => {
   if ((type !== 'approve' && type !== 'deny') || !isValidToken(id)) {
     return res.status(400).send('Invalid request.');
   }
-  if (!APPROVERS.includes(approverName)) return res.status(400).send('Invalid approver.');
+  const settings = await getSettings(redis);
+  if (!settings.approvers.includes(approverName)) return res.status(400).send('Invalid approver.');
   if (adjustedTier && !TIERS.includes(adjustedTier)) return res.status(400).send('Invalid tier.');
 
   const stored = await redis.get(pendingKey(id));
@@ -218,7 +219,7 @@ module.exports = async (req, res) => {
   const submission = parseStored(stored);
 
   const approved = type === 'approve';
-  const marketingEmail = process.env.MARKETING_EMAIL || 'steven@ztexconstruction.com, bchavez@ztexconstruction.com';
+  const marketingEmail = settings.marketingEmails.join(', ');
 
   // Atomically claim the decision so two approvers can't both act
   const key = decisionKey(id);

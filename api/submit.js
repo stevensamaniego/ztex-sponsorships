@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 const { Redis } = require('@upstash/redis');
 const { SUBMISSION_TTL_SECONDS, newToken, pendingKey, escapeHtml } = require('../lib/security');
+const { getSettings } = require('../lib/settings');
 
 const redis = Redis.fromEnv();
 
@@ -182,11 +183,12 @@ module.exports = async (req, res) => {
       contentType: f.type
     }));
 
+    const { requestEmails } = await getSettings(redis);
     const transporter = createTransporter();
 
     await transporter.sendMail({
       from: '"ZTEX Sponsorships" <sponsorships@ztexconstruction.com>',
-      to: 'sponsorships@ztexconstruction.com',
+      to: requestEmails.join(', '),
       replyTo: email,
       subject: `New Sponsorship Request — ${String(orgName || '').replace(/[\r\n]+/g, ' ')}`,
       html: buildBossEmail(req.body, approveUrl, denyUrl),
