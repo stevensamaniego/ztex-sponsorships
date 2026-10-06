@@ -69,6 +69,7 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - `/api/confirm` only accepts known approvers and tiers. Removed dead duplicate email/page builders from `action.js`.
 - Verified locally with 15 mocked end-to-end checks (forged/made-up links rejected, escaping, retry after email failure, double-decision blocked).
 - Note: approve/deny links in emails sent before this deploy no longer work; those requests need to be resubmitted.
+- Found during deploy: the original Upstash Redis store had been deleted (Vercel integration "Uninstalled"; host no longer resolves), so approve/deny links that touched Redis had been failing with FUNCTION_INVOCATION_FAILED for an unknown period. Rolled production back briefly, removed the stale KV_*/REDIS_URL vars, provisioned a new Upstash for Redis store `ztex-sponsorships-redis` via Vercel Marketplace, redeployed 3b24aec and promoted it. Live checks: forged old-style link 400, made-up token 404, homepage 200.
 
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
@@ -76,6 +77,8 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - Possible cleanup (not requested): remove unused dependencies (`express`, `multer`, `formidable`, `@vercel/kv`) and the dead `start`/`dev` scripts; turn off the stale GitHub Pages site.
 
 ## Gotchas
+- Redis is now required for submissions too (request records live there). If the Upstash store is removed again, the form stops working — check `vercel integration list` first.
+- After the 2026-10-06 rollback/promote, confirm the next push to main auto-promotes to production.
 - The repo still has GitHub Pages enabled with the same `CNAME` from the static/Formspree period, but DNS for the domain points at Vercel — Vercel is the live host.
 - Approve/Deny links carry the submission as plain base64 in the query string (not signed or encrypted). Treat the links as sensitive and don't forward them.
 - The Redis lock is written before the marketing email is sent; if the email fails, the request is locked anyway and must be handled manually.
