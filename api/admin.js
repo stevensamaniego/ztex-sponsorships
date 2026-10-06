@@ -2,9 +2,11 @@ const { Redis } = require('@upstash/redis');
 const { escapeHtml } = require('../lib/security');
 const { getSettings, saveSettings, parseLines } = require('../lib/settings');
 const {
-  checkCredentials, createSessionCookie, clearSessionCookie, isAuthenticated,
+  checkCredentials, createSessionCookie, clearSessionCookie, createMfaPendingCookie,
+  clearMfaPendingCookie, isAuthenticated, isMfaPending,
   clientIp, isLockedOut, recordFailedLogin, clearFailedLogins
 } = require('../lib/auth');
+const { isEnrolled, beginEnrollment, confirmEnrollment, verifyLoginCode } = require('../lib/mfa');
 
 const redis = Redis.fromEnv();
 
@@ -63,6 +65,13 @@ function page(title, body) {
     .msg { padding: 12px 14px; border-radius: 5px; font-size: 14px; margin-bottom: 24px; }
     .msg.ok { background: #1a7a3c22; border: 1px solid #1a7a3c; color: #6fd394; }
     .msg.err { background: #C41E3A22; border: 1px solid #C41E3A; color: #ff8a9b; }
+    .qr { text-align: center; margin: 8px 0 20px; }
+    .qr img { border-radius: 8px; width: 220px; height: 220px; }
+    .key { font-family: Menlo, Consolas, monospace; font-size: 14px; color: #fff; background: #111;
+           border: 1px solid #333; border-radius: 5px; padding: 10px 14px; text-align: center;
+           letter-spacing: 1px; margin-bottom: 24px; word-break: break-all; }
+    .code { font-size: 22px; letter-spacing: 8px; text-align: center; }
+    ol.steps { color: #999; font-size: 13px; line-height: 1.7; margin: 0 0 18px 18px; }
   </style>
 </head>
 <body><div class="card">${body}</div></body>
@@ -81,6 +90,50 @@ function loginPage(error) {
       <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
       <button class="btn" type="submit">Sign In</button>
     </form>`);
+}
+
+function codeForm(buttonLabel) {
+  return `
+    <form method="POST" action="/admin">
+      <input type="hidden" name="action" value="mfa">
+      <div class="field"><label>6-digit code</label>
+        <input class="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus></div>
+      <button class="btn" type="submit">${buttonLabel}</button>
+    </form>
+    <form method="POST" action="/admin" style="margin-top:14px;text-align:center;">
+      <input type="hidden" name="action" value="logout"><button class="link-btn" type="submit">Cancel</button>
+    </form>`;
+}
+
+function mfaChallengePage(error) {
+  return page('2-Step Verification', `
+    <div class="logo"><div>ZTEX <span>Construction</span></div></div>
+    <h1>2-Step Verification</h1>
+    <p class="subtitle">Enter the 6-digit code from your authenticator app for ZTEX Sponsorships.</p>
+    ${error ? `<div class="msg err">${escapeHtml(error)}</div>` : ''}
+    ${codeForm('Verify')}`);
+}
+
+function mfaEnrollPage({ qr, manualKey }, error) {
+  return page('Set Up 2-Step Verification', `
+    <div class="logo"><div>ZTEX <span>Construction</span></div></div>
+    <h1>Set Up 2-Step Verification</h1>
+    <p class="subtitle">Required for the admin account. This is a one-time setup.</p>
+    ${error ? `<div class="msg err">${escapeHtml(error)}</div>` : ''}
+    <ol class="steps">
+      <li>Open Microsoft Authenticator, Google Authenticator, or a similar app.</li>
+      <li>Add an account and scan this QR code.</li>
+      <li>Enter the 6-digit code the app shows.</li>
+    </ol>
+    <div class="qr"><img src="${qr}" alt="QR code for authenticator app"></div>
+    <p class="hint" style="text-align:center;">Can't scan? Enter this key manually:</p>
+    <div class="key">${escapeHtml(manualKey)}</div>
+    ${codeForm('Confirm & Sign In')}`);
+}
+
+async function mfaPage(error) {
+  if (await isEnrolled(redis)) return mfaChallengePage(error);
+  return mfaEnrollPage(await beginEnrollment(redis, process.env.ADMIN_USERNAME), error);
 }
 
 function settingsPage(settings, message, isError) {
@@ -130,8 +183,9 @@ module.exports = async (req, res) => {
   const authed = isAuthenticated(cookies);
 
   if (req.method === 'GET') {
-    if (!authed) return send(res, loginPage());
-    return send(res, settingsPage(await getSettings(redis)));
+    if (authed) return send(res, settingsPage(await getSettings(redis)));
+    if (isMfaPending(cookies)) return send(res, await mfaPage());
+    return send(res, loginPage());
   }
 
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -148,14 +202,35 @@ module.exports = async (req, res) => {
       await recordFailedLogin(redis, ip);
       return send(res, loginPage('Incorrect username or password.'), 401);
     }
+    // Password OK — the session is only issued after the 2-step code
+    res.setHeader('Set-Cookie', createMfaPendingCookie());
+    res.setHeader('Location', '/admin');
+    return res.status(303).send('');
+  }
+
+  if (body.action === 'mfa') {
+    if (!isMfaPending(cookies)) return send(res, loginPage('Your sign-in expired. Please start again.'), 401);
+    const ip = clientIp(req);
+    if (await isLockedOut(redis, ip)) {
+      res.setHeader('Set-Cookie', clearMfaPendingCookie());
+      return send(res, loginPage('Too many failed attempts. Try again in 15 minutes.'), 429);
+    }
+    const enrolled = await isEnrolled(redis);
+    const ok = enrolled
+      ? await verifyLoginCode(redis, body.code)
+      : await confirmEnrollment(redis, body.code);
+    if (!ok) {
+      await recordFailedLogin(redis, ip);
+      return send(res, await mfaPage("That code didn't work. Check the app and try the current code."), 401);
+    }
     await clearFailedLogins(redis, ip);
-    res.setHeader('Set-Cookie', createSessionCookie());
+    res.setHeader('Set-Cookie', [createSessionCookie(), clearMfaPendingCookie()]);
     res.setHeader('Location', '/admin');
     return res.status(303).send('');
   }
 
   if (body.action === 'logout') {
-    res.setHeader('Set-Cookie', clearSessionCookie());
+    res.setHeader('Set-Cookie', [clearSessionCookie(), clearMfaPendingCookie()]);
     res.setHeader('Location', '/admin');
     return res.status(303).send('');
   }
