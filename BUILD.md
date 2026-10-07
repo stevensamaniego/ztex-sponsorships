@@ -152,6 +152,9 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - `api/cleanup.js` requires `Authorization: Bearer $CRON_SECRET` (Vercel sends it automatically; the secret is in Vercel prod env and Keychain `ztex-sponsorships-cron`). It collects every `pathname` referenced by any ledger entry, lists `requests/` in Blob, and deletes blobs that aren't referenced **and** are over 24 hours old (so uploads in progress are safe). Files belonging to requests are never removed. The result is saved to Redis `cleanup:last` and shown at the bottom of the admin Settings tab.
 - Verified against the real Blob store: 401 without or with a wrong secret; a fresh orphan was kept; with the clock moved forward 2 days the orphan was deleted and the referenced file kept; the Settings note renders.
 
+### 2026-10-07 — Marketing email: drop the documents section
+- At Steven's request, removed the "Submitter's Documents" list from the approved/denied marketing email body; the files are still attached. A one-line red note appears only if the attachments couldn't be loaded. Verified both cases with a stubbed handler test.
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.

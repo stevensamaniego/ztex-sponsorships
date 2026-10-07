@@ -123,16 +123,8 @@ function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjuste
               </tr>` : ''}
             </table>
 
-            ${(submission.files || []).length ? `
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-              <tr><td style="background:#f8f8f8;border-left:3px solid #C41E3A;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#C41E3A;">Submitter's Documents</td></tr>
-              <tr><td style="padding:12px 14px;font-size:14px;color:#444;line-height:1.7;">
-                ${submission.files.map(f => `📎 ${escapeHtml(f.name || f)}`).join('<br>')}
-                <div style="font-size:12px;color:${attachmentsMissing ? '#C41E3A' : '#888'};margin-top:6px;">${attachmentsMissing
-                  ? 'These files couldn\'t be attached to this email. Try downloading them from the sponsorship admin page, or ask the submitter for copies.'
-                  : 'Attached to this email.'}</div>
-              </td></tr>
-            </table>` : ''}
+            ${attachmentsMissing ? `
+            <p style="margin:0 0 24px;font-size:13px;color:#C41E3A;line-height:1.6;">The submitter's documents couldn't be attached to this email. Download them from the sponsorship admin page, or ask the submitter for copies.</p>` : ''}
 
             ${bossNotes ? `
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
