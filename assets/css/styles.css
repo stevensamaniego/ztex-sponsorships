@@ -142,7 +142,7 @@ img { max-width: 100%; height: auto; }
     filter: brightness(1.1);
 }
 .nav-logo:hover .nav-logo-img { transform: scale(1.03); }
-.nav-links { display: flex; gap: 2rem; }
+.nav-links { display: flex; align-items: center; gap: 2rem; }
 .nav-link {
     font-size: 0.85rem;
     font-weight: 500;
@@ -164,6 +164,41 @@ img { max-width: 100%; height: auto; }
 }
 .nav-link:hover { color: var(--white); }
 .nav-link:hover::after { width: 100%; }
+
+/* --- Language Toggle (EN | ES) --- */
+.lang-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding-left: 1.5rem;
+    border-left: 1px solid var(--gray-700);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+}
+.lang-btn {
+    background: none;
+    border: none;
+    padding: 0.25rem 0.15rem;
+    font: inherit;
+    letter-spacing: inherit;
+    color: var(--gray-500);
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+.lang-btn:hover { color: var(--white); }
+.lang-btn.active { color: var(--gold); }
+.lang-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 2px; }
+.lang-sep { color: var(--gray-600); }
+.lang-toggle-floating {
+    position: fixed;
+    top: 1.25rem;
+    right: 1.5rem;
+    z-index: 10;
+    padding-left: 0;
+    border-left: none;
+}
 
 /* --- Hero --- */
 .hero {
@@ -877,11 +912,21 @@ img { max-width: 100%; height: auto; }
     }
     .nav-links { gap: 1.25rem; }
     .nav-link { font-size: 0.75rem; }
+    .lang-toggle { padding-left: 1rem; font-size: 0.7rem; }
     .progress-connector { width: 40px; }
     .progress-label { font-size: 0.6rem; }
     .stat-card { flex-wrap: wrap; }
     .stat-label { margin-left: 0; flex-basis: 100%; margin-top: 0.25rem; }
     .hero-cta { width: 100%; justify-content: center; }
+}
+@media (max-width: 600px) {
+    /* Logo on one row, links + language toggle on the next (the Spanish labels don't fit beside the logo) */
+    .nav { padding: 0.75rem 0; }
+    .nav-inner { flex-direction: column; gap: 0.6rem; padding: 0 1rem; }
+    .nav-logo-img { height: 34px; }
+    .nav-links { gap: 0.9rem; }
+    .nav-link { font-size: 0.68rem; letter-spacing: 0.04em; white-space: nowrap; }
+    .lang-toggle { padding-left: 0.75rem; font-size: 0.68rem; }
 }
 @media (max-width: 480px) {
     .container { padding: 0 1.25rem; }

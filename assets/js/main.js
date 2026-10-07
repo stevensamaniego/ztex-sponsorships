@@ -2,6 +2,9 @@
    ZTEX Construction — Sponsorship Portal JS
    ========================================================================== */
 
+// --- Language (assets/js/i18n.js loads first; English if it didn't) ---
+const t = (key, vars) => window.I18n ? I18n.t(key, vars) : key;
+
 // --- Preloader ---
 window.addEventListener('load', () => {
     setTimeout(() => {
@@ -308,24 +311,24 @@ fileInput.addEventListener('change', () => {
 function handleFiles(files) {
     Array.from(files).forEach(file => {
         if (uploadedFiles.length >= MAX_FILES) {
-            showToast(`Maximum ${MAX_FILES} files allowed`);
+            showToast(t('toast.maxFiles', { n: MAX_FILES }));
             return;
         }
         if (file.size > MAX_FILE_SIZE) {
-            showToast(`"${file.name}" exceeds 10MB limit`);
+            showToast(t('toast.fileTooBig', { name: file.name }));
             return;
         }
         if (!ALLOWED_TYPES.includes(file.type)) {
-            showToast(`"${file.name}" isn't a supported file type`);
+            showToast(t('toast.fileType', { name: file.name }));
             return;
         }
         if (uploadedFiles.reduce((sum, f) => sum + f.size, 0) + file.size > MAX_TOTAL_SIZE) {
-            showToast('Attachments can total 20MB at most');
+            showToast(t('toast.totalSize'));
             return;
         }
         // Check for duplicates
         if (uploadedFiles.some(f => f.name === file.name && f.size === file.size)) {
-            showToast(`"${file.name}" already added`);
+            showToast(t('toast.duplicate', { name: file.name }));
             return;
         }
         uploadedFiles.push(file);
@@ -345,7 +348,7 @@ function renderFileList() {
             </svg>
             <span class="file-name">${file.name}</span>
             <span class="file-size">${formatFileSize(file.size)}</span>
-            <button type="button" class="file-remove" data-index="${index}" title="Remove file">
+            <button type="button" class="file-remove" data-index="${index}" title="${t('files.remove')}" data-i18n-title="files.remove">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
         `;
@@ -479,17 +482,17 @@ form.addEventListener('submit', async (e) => {
     let storedFiles;
     try {
         storedFiles = await uploadFiles(uploadedFiles, (i, pct) => {
-            loadingText.textContent = `Uploading file ${i + 1} of ${uploadedFiles.length} (${pct}%)...`;
+            loadingText.textContent = t('upload.progress', { i: i + 1, n: uploadedFiles.length, pct });
         });
     } catch (err) {
         console.error('Upload error:', err);
-        showToast('A file failed to upload. Please try again or call (915) 591-6900.');
+        showToast(serverMessage(err, false) || t('toast.uploadFailed'));
         submitBtn.classList.remove('loading');
         submitBtn.disabled = false;
-        loadingText.textContent = 'Submitting...';
+        loadingText.textContent = t('form.submitting');
         return;
     }
-    loadingText.textContent = 'Submitting...';
+    loadingText.textContent = t('form.submitting');
 
     // Build JSON payload
     const payload = {
@@ -524,13 +527,22 @@ form.addEventListener('submit', async (e) => {
         window.location.href = '/thanks';
     } catch (err) {
         console.error('Submission error:', err);
-        showToast(err.message && err.message !== 'Submission failed' && !/fetch/i.test(err.message)
-            ? err.message
-            : 'Something went wrong. Please try again or call (915) 591-6900.');
+        showToast(serverMessage(err, true) || t('toast.genericError'));
         submitBtn.classList.remove('loading');
         submitBtn.disabled = false;
     }
 });
+
+// The API answers in English. Known messages are shown in the active language. Unknown ones are
+// shown as-is only in English and only when showUnknown is set; otherwise the caller's fallback is used.
+function serverMessage(err, showUnknown) {
+    const message = err && err.message;
+    if (!message) return null;
+    const known = window.I18n ? I18n.serverError(message) : null;
+    if (known) return known;
+    if (!showUnknown || message === 'Submission failed' || /fetch/i.test(message)) return null;
+    return (!window.I18n || I18n.lang === 'en') ? message : null;
+}
 
 function randomId() {
     const bytes = new Uint8Array(16);

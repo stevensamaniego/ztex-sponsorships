@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Request Received — ZTEX Construction</title>
-    <meta name="description" content="Your sponsorship request has been received. ZTEX Construction will follow up within 5-7 business days.">
+    <title data-i18n="meta.thanksTitle">Request Received — ZTEX Construction</title>
+    <meta name="description" content="Your sponsorship request has been received. ZTEX Construction will follow up within 5-7 business days." data-i18n-content="meta.thanksDescription">
     <link rel="icon" type="image/png" href="assets/images/ztex-star.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -194,6 +194,11 @@
     <canvas id="particles" class="particles-canvas"></canvas>
 
     <main class="thanks-page">
+        <div class="lang-toggle lang-toggle-floating" role="group" aria-label="Language" data-i18n-aria-label="lang.label">
+            <button type="button" class="lang-btn" data-lang="en" lang="en" aria-label="English" data-i18n-aria-label="lang.en" aria-pressed="true">EN</button>
+            <span class="lang-sep" aria-hidden="true">|</span>
+            <button type="button" class="lang-btn" data-lang="es" lang="es" aria-label="Spanish" data-i18n-aria-label="lang.es" aria-pressed="false">ES</button>
+        </div>
         <div class="thanks-card">
 
             <div class="thanks-logo">
@@ -208,25 +213,25 @@
                 </svg>
             </div>
 
-            <div class="thanks-tag">Request Received</div>
+            <div class="thanks-tag" data-i18n="thanks.tag">Request Received</div>
 
-            <h1 class="thanks-title">
+            <h1 class="thanks-title" data-i18n-html="thanks.title">
                 Thank You for<br><em>Reaching Out</em>
             </h1>
 
             <div class="thanks-divider"></div>
 
-            <p class="thanks-body">
+            <p class="thanks-body" data-i18n-html="thanks.body">
                 Your sponsorship request has been submitted successfully. Our team will review your application and follow up with you within <strong style="color: rgba(245,240,232,0.85);">5–7 business days</strong>.
             </p>
 
             <div class="thanks-actions">
                 <a href="/" class="thanks-btn-primary">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 5 5 12 12 19"></polyline></svg>
-                    Back to Home
+                    <span data-i18n="thanks.home">Back to Home</span>
                 </a>
                 <a href="https://www.ztexconstruction.com" class="thanks-btn-secondary" target="_blank" rel="noopener">
-                    Visit ZTEX Construction
+                    <span data-i18n="thanks.visit">Visit ZTEX Construction</span>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                 </a>
             </div>
@@ -235,6 +240,7 @@
         </div>
     </main>
 
+    <script src="assets/js/i18n.js"></script>
     <script src="assets/js/main.js"></script>
 </body>
 </html>
