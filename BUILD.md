@@ -84,6 +84,11 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - Secret stored AES-256-GCM encrypted in Redis `admin:totp` (key derived from `ADMIN_SESSION_SECRET`); a used code can't be replayed; wrong codes count toward the same 5-failure/15-min lockout.
 - Verified with 44 mocked checks (enrollment, replay, lockout, cookie purpose separation, plus the existing request/approval/admin tests).
 
+### 2026-10-06 — Fix email sending (stale SMTP password)
+- Steven's test submission failed: Microsoft rejected the timeclock@ login (`535 5.7.3 Authentication unsuccessful`). Vercel `SMTP_PASSWORD` was 103 days old and no longer matched the mailbox's app password, so the form had likely been unable to send for some time.
+- Updated `SMTP_PASSWORD` (production, sensitive) to the current app password, redeployed. Live test submission returned `{"ok":true}`.
+- The timeclock@ app password is still due for rotation (it was hardcoded in ZPresence until today); when rotated, update this env var too.
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.
