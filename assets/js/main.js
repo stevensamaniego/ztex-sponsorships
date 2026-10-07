@@ -425,7 +425,22 @@ document.getElementById('sponsorshipAmount').addEventListener('focus', function(
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    if (!validateStep(3)) return;
+    // Enter in a field on steps 1-2 submits the form implicitly; treat it as Continue
+    if (currentStep < steps.length) {
+        if (validateStep(currentStep)) goToStep(currentStep + 1);
+        return;
+    }
+
+    // Re-check every step before sending; jump back to the first incomplete one
+    for (let step = 1; step <= steps.length; step++) {
+        if (!validateStep(step)) {
+            if (step !== currentStep) {
+                goToStep(step);
+                validateStep(step);
+            }
+            return;
+        }
+    }
 
     const submitBtn = form.querySelector('.btn-submit');
     submitBtn.classList.add('loading');

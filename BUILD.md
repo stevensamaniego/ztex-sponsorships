@@ -106,6 +106,12 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 
 - 2026-10-06: deployed (077c652) with Entra app "ZTEX Sponsorships Approvals" (client f9f8b710…), approvers steven/groldan/jroyo/mtarin@ set in Redis; Steven verified sign-in → approve → decision email end to end.
 
+### 2026-10-07 — Enter key submitted incomplete requests
+- Problem (reported by Steven): pressing Enter in a step-1 field triggered the form's implicit submit. The submit handler only validated step 3 (which has no required fields), so a half-filled request went to `/api/submit`, which had no validation, and was emailed to leadership.
+- `assets/js/main.js`: on steps 1–2, the submit event now acts as Continue (validate the current step, then advance). On step 3, every step is re-validated and the form jumps back to the first incomplete one.
+- `api/submit.js`: server-side guard. It returns 400 when orgName/contactName/email/phone/eventName/description is missing or blank, or the email is invalid, before anything is stored or emailed.
+- Verified: stubbed handler tests (partial, empty, missing body, bad email, whitespace give 400 with no email or Redis write; a full request gives 200) and a local Playwright run (Enter on partial step 1/2 stays put with 0 POSTs, Enter on a complete step advances, a blanked step-1 field at submit jumps back, a complete submit gives 1 POST and /thanks).
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.

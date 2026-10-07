@@ -163,7 +163,16 @@ module.exports = async (req, res) => {
       orgName, contactName, email, phone,
       eventName, eventDate, sponsorshipAmount, sponsorshipTier,
       description, additionalNotes, files
-    } = req.body;
+    } = req.body || {};
+
+    const required = { orgName, contactName, email, phone, eventName, description };
+    const missing = Object.keys(required).filter(k => typeof required[k] !== 'string' || !required[k].trim());
+    if (missing.length) {
+      return res.status(400).json({ error: 'Missing required fields', fields: missing });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return res.status(400).json({ error: 'Invalid email', fields: ['email'] });
+    }
 
     // Store the submission server-side; links carry only an unguessable token
     const token = newToken();
