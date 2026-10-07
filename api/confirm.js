@@ -4,8 +4,8 @@ const { SUBMISSION_TTL_SECONDS, isValidToken, pendingKey, decisionKey, escapeHtm
 
 const { getSettings, isApprover } = require('../lib/settings');
 const { recordDecision } = require('../lib/ledger');
+const { parseTier, tierLabel } = require('../lib/tiers');
 const { parseCookies, readSession, messagePage, sendPage } = require('../lib/approver');
-const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'];
 
 const redis = Redis.fromEnv();
 
@@ -26,16 +26,16 @@ function stripDollar(val) {
   return val ? String(val).replace(/^\$+/, '') : '';
 }
 
-function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTier, rawBossNotes, approver) {
+function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTierLabel, rawBossNotes, approver) {
   const orgName = escapeHtml(submission.orgName);
   const contactName = escapeHtml(submission.contactName);
   const email = escapeHtml(submission.email);
   const phone = escapeHtml(submission.phone);
   const eventName = escapeHtml(submission.eventName);
-  const sponsorshipTier = escapeHtml(submission.sponsorshipTier);
+  const sponsorshipTier = escapeHtml(tierLabel(submission.sponsorshipTier, submission.sponsorshipTierOther)) || 'Not specified';
   const { eventDate, sponsorshipAmount } = submission;
   const adjustedAmount = escapeHtml(rawAdjustedAmount);
-  const adjustedTier = escapeHtml(rawAdjustedTier);
+  const adjustedTier = escapeHtml(rawAdjustedTierLabel);
   const bossNotes = escapeHtml(rawBossNotes);
   const approverName = approver ? `${escapeHtml(approver.name)} (${escapeHtml(approver.email)})` : '';
 
@@ -201,7 +201,7 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
   // Identity comes only from the Microsoft sign-in session — never from the form
-  const { type, id, adjustedAmount, adjustedTier, bossNotes } = req.body || {};
+  const { type, id, adjustedAmount, bossNotes } = req.body || {};
 
   if ((type !== 'approve' && type !== 'deny') || !isValidToken(id)) {
     return res.status(400).send('Invalid request.');
@@ -216,7 +216,10 @@ module.exports = async (req, res) => {
     return sendPage(res, messagePage('Not an approver',
       `Signed in as ${session.email}, which isn't an approver for sponsorship requests.`, 403));
   }
-  if (adjustedTier && !TIERS.includes(adjustedTier)) return res.status(400).send('Invalid tier.');
+  const tier = type === 'approve' ? parseTier(req.body.adjustedTier, req.body.adjustedTierOther) : { tier: '', other: '' };
+  if (tier.error) return sendPage(res, messagePage('Check the tier', `${tier.error} Go back and try again.`, 400));
+  const adjustedTier = tier.tier;
+  const adjustedTierOther = tier.other;
 
   const stored = await redis.get(pendingKey(id));
   if (!stored) {
@@ -250,14 +253,14 @@ module.exports = async (req, res) => {
       subject: approved
         ? `✅ Sponsorship Approved — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`
         : `❌ Sponsorship Denied — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`,
-      html: buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes, session)
+      html: buildMarketingEmail(submission, approved, adjustedAmount, tierLabel(adjustedTier, adjustedTierOther), bossNotes, session)
     });
 
     await redis.del(pendingKey(id));
     try {
       await recordDecision(redis, id, {
         action: type, approver: session.name, approverEmail: session.email,
-        adjustedAmount, adjustedTier, bossNotes, submission
+        adjustedAmount, adjustedTier, adjustedTierOther, bossNotes, submission
       });
     } catch (err) {
       // The decision itself is already recorded and emailed; don't fail the approver over the log

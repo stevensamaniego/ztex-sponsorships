@@ -915,3 +915,5 @@ img { max-width: 100%; height: auto; }
     color: #fff;
     transform: translateY(-2px);
 }
+
+.form-group[hidden] { display: none; }

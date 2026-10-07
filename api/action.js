@@ -3,23 +3,25 @@ const { isValidToken, pendingKey, decisionKey, escapeHtml, parseStored } = requi
 const { getSettings, isApprover } = require('../lib/settings');
 const { msConfig, parseCookies, readSession, loginUrl, messagePage, sendPage, notConfiguredPage } = require('../lib/approver');
 
-const redis = Redis.fromEnv();
+const { TIERS, OTHER, OTHER_MAX, normalizeTier, tierLabel } = require('../lib/tiers');
 
-const TIERS = [
-  'Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'
-];
+const redis = Redis.fromEnv();
 
 function reviewForm(type, token, submission, session) {
   const orgName = escapeHtml(submission.orgName);
   const contactName = escapeHtml(submission.contactName);
   const email = escapeHtml(submission.email);
   const eventName = escapeHtml(submission.eventName);
-  const { sponsorshipTier } = submission;
+  const sponsorshipTier = normalizeTier(submission.sponsorshipTier);
+  const tierOther = submission.sponsorshipTierOther || '';
+  const isOther = sponsorshipTier === OTHER;
   const amount = escapeHtml(submission.sponsorshipAmount || '');
   const isApprove = type === 'approve';
   const actionLabel = isApprove ? 'Confirm Approval' : 'Confirm Denial';
   const actionColor = isApprove ? '#1a7a3c' : '#C41E3A';
-  const tierOptions = TIERS.map(t => `<option value="${t}"${t === sponsorshipTier ? ' selected' : ''}>${t}</option>`).join('');
+  // Blank keeps whatever was requested (including nothing), so the tier is never changed by accident
+  const tierOptions = (sponsorshipTier ? '' : '<option value="" selected>Not specified</option>')
+    + TIERS.map(t => `<option value="${t}"${t === sponsorshipTier ? ' selected' : ''}>${t}</option>`).join('');
 
   return `<!DOCTYPE html>
 <html>
@@ -65,6 +67,7 @@ function reviewForm(type, token, submission, session) {
     .divider { border: none; border-top: 1px solid #2a2a2a; margin: 24px 0; }
     .signer { font-size: 14px; color: #999; }
     .signer strong { color: #fff; }
+    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
@@ -78,6 +81,8 @@ function reviewForm(type, token, submission, session) {
       <div class="info-item"><label>Contact</label><span>${contactName}</span></div>
       <div class="info-item"><label>Event</label><span>${eventName}</span></div>
       <div class="info-item"><label>Email</label><span>${email}</span></div>
+      <div class="info-item"><label>Requested Tier</label><span>${escapeHtml(tierLabel(sponsorshipTier, tierOther)) || 'Not specified'}</span></div>
+      <div class="info-item"><label>Requested Amount</label><span>${amount || 'Not specified'}</span></div>
     </div>
 
     <form method="POST" action="/api/confirm">
@@ -99,9 +104,26 @@ function reviewForm(type, token, submission, session) {
         </div>
         <div class="field">
           <label>Sponsorship Tier</label>
-          <select name="adjustedTier">${tierOptions}</select>
+          <select name="adjustedTier" id="adjustedTier">${tierOptions}</select>
         </div>
       </div>
+      <div class="field" id="tierOtherField"${isOther ? '' : ' hidden'}>
+        <label>Describe the Tier <span style="color:#C41E3A;">*</span></label>
+        <input type="text" name="adjustedTierOther" id="adjustedTierOther" maxlength="${OTHER_MAX}" value="${escapeHtml(tierOther)}" placeholder="e.g. Hole sponsor, Naming rights"${isOther ? ' required' : ''}>
+      </div>
+      <script>
+        (function () {
+          var sel = document.getElementById('adjustedTier');
+          var box = document.getElementById('tierOtherField');
+          var input = document.getElementById('adjustedTierOther');
+          sel.addEventListener('change', function () {
+            var other = sel.value === '${OTHER}';
+            box.hidden = !other;
+            input.required = other;
+            if (other) input.focus();
+          });
+        })();
+      </script>
       ` : ''}
 
       <hr class="divider">

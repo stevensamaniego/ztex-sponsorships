@@ -8,6 +8,7 @@ const {
 } = require('../lib/auth');
 const { isEnrolled, beginEnrollment, confirmEnrollment, verifyLoginCode } = require('../lib/mfa');
 const { listRequests } = require('../lib/ledger');
+const { tierLabel } = require('../lib/tiers');
 
 const redis = Redis.fromEnv();
 
@@ -261,7 +262,7 @@ function matchesQuery(r, q) {
 
 function ledgerRow(r) {
   const { requested, final, changed } = amounts(r);
-  const tier = r.status === 'approved' && r.adjustedTier ? r.adjustedTier : r.sponsorshipTier;
+  const tier = r.status === 'approved' && r.adjustedTier ? tierLabel(r.adjustedTier, r.adjustedTierOther) : tierLabel(r.sponsorshipTier, r.sponsorshipTierOther);
   const field = (label, value) => `<dt>${label}</dt><dd>${value || '—'}</dd>`;
   const e = escapeHtml;
   return `
@@ -287,7 +288,7 @@ function ledgerRow(r) {
             ${field('Event', e(r.eventName))}
             ${field('Event date', fmtEventDate(r.eventDate))}
             ${field('Amount', money(requested))}
-            ${field('Tier', e(r.sponsorshipTier))}
+            ${field('Tier', e(tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)))}
             ${field('Submitted', fmtDateTime(r.submittedAt))}
             ${field('Attachments', (r.files || []).map(e).join('<br>'))}
           </dl>
@@ -371,9 +372,9 @@ function requestsCsv(rows) {
     ['Submitted', r => r.submittedAt ? new Date(r.submittedAt).toISOString() : ''],
     ['Organization', r => r.orgName], ['Contact', r => r.contactName], ['Email', r => r.email], ['Phone', r => r.phone],
     ['Event', r => r.eventName], ['Event Date', r => r.eventDate],
-    ['Requested Amount', r => amounts(r).requested ?? ''], ['Requested Tier', r => r.sponsorshipTier],
+    ['Requested Amount', r => amounts(r).requested ?? ''], ['Requested Tier', r => tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)],
     ['Approved Amount', r => r.status === 'approved' ? amounts(r).final ?? '' : ''],
-    ['Approved Tier', r => r.status === 'approved' ? (r.adjustedTier || r.sponsorshipTier) : ''],
+    ['Approved Tier', r => r.status !== 'approved' ? '' : r.adjustedTier ? tierLabel(r.adjustedTier, r.adjustedTierOther) : tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)],
     ['Decided By', r => r.approver], ['Decided By Email', r => r.approverEmail],
     ['Decided', r => r.decidedAt ? new Date(r.decidedAt).toISOString() : ''],
     ['Leadership Notes', r => r.bossNotes], ['Description', r => r.description],

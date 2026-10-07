@@ -125,6 +125,15 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 ### 2026-10-07 — Settings header fix
 - On desktop the Settings tab's 560px card wrapped "Sign out" onto two lines. The settings card is now 680px (`.card.mid`), tabs and Sign out are `white-space: nowrap`, and `.mid` gets the same tighter phone padding as `.wide`. Verified with Playwright at 1280 and 390 px (single-line button, no overflow).
 
+### 2026-10-07 — Matching tier lists + required "Other" description
+- Problem (reported by Steven): the public form offered Platinum/Gold/Silver/Bronze/Custom/N/A, but the approval page offered Bronze/Silver/Gold/Platinum/Title Sponsor/In-Kind/Other. Requests with Custom, N/A or no tier opened on the approval page with **Bronze** preselected, so approving without looking silently changed the tier to Bronze.
+- New `lib/tiers.js` is the single list: Title Sponsor, Platinum, Gold, Silver, Bronze, In-Kind, Not Applicable, Other. It provides `parseTier` (validation; "Other" requires a description of up to 100 characters; legacy Custom → Other and N/A → Not Applicable, with Custom accepted without a description for cached old forms) and `tierLabel` (e.g. "Other: Hole sponsor"). The index.html `<select>` must stay in sync with it, and a test checks that.
+- Public form: picking Other reveals a required full-width "Describe the Tier / Level" field. It's validated by Continue, Enter and final submit, and cleared and un-required when another tier is picked. The payload adds `sponsorshipTierOther`.
+- `/api/submit` validates the tier and stores `sponsorshipTierOther` in the pending record and ledger; the leadership email shows the label.
+- Approval page: same list; the requested tier is preselected, a blank request shows "Not specified" (never Bronze), and Other shows a prefilled, required description field. "Requested Tier" and "Requested Amount" were added to the summary box.
+- `/api/confirm` validates `adjustedTier`/`adjustedTierOther` on approve (400 page, no decision claimed); the marketing email, ledger, admin and CSV use labels.
+- Verified: 20 handler checks in the in-memory harness, email HTML checks, and Playwright runs of the public form (show/hide, required, Enter blocked, payload) and the approval page (prefill, toggle, browser validation).
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.

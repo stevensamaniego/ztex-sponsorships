@@ -391,6 +391,25 @@ function showToast(message) {
     }, 3000);
 }
 
+// --- "Other" tier needs a description ---
+const tierSelect = document.getElementById('sponsorshipTier');
+const tierOtherGroup = document.getElementById('tierOtherGroup');
+const tierOtherInput = document.getElementById('sponsorshipTierOther');
+function syncTierOther() {
+    const isOther = tierSelect.value === 'Other';
+    tierOtherGroup.hidden = !isOther;
+    tierOtherInput.required = isOther;
+    if (!isOther) {
+        tierOtherInput.value = '';
+        tierOtherInput.classList.remove('error');
+    }
+}
+tierSelect.addEventListener('change', () => {
+    syncTierOther();
+    if (tierSelect.value === 'Other') tierOtherInput.focus();
+});
+syncTierOther();
+
 // --- Phone Formatting ---
 document.getElementById('phone').addEventListener('input', function(e) {
     let val = e.target.value.replace(/\D/g, '');
@@ -466,7 +485,8 @@ form.addEventListener('submit', async (e) => {
         eventName: document.getElementById('eventName').value.trim(),
         eventDate: document.getElementById('eventDate').value,
         sponsorshipAmount: document.getElementById('sponsorshipAmount').value.trim(),
-        sponsorshipTier: document.getElementById('sponsorshipTier').value,
+        sponsorshipTier: tierSelect.value,
+        sponsorshipTierOther: tierOtherInput.value.trim(),
         description: document.getElementById('description').value.trim(),
         additionalNotes: document.getElementById('additionalNotes').value.trim(),
         files: encodedFiles
@@ -493,6 +513,7 @@ form.addEventListener('submit', async (e) => {
 // --- Reset Form ---
 window.resetForm = function() {
     form.reset();
+    syncTierOther();
     uploadedFiles = [];
     renderFileList();
     form.style.display = '';

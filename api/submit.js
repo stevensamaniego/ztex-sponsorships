@@ -3,6 +3,7 @@ const { Redis } = require('@upstash/redis');
 const { SUBMISSION_TTL_SECONDS, newToken, pendingKey, escapeHtml } = require('../lib/security');
 const { getSettings } = require('../lib/settings');
 const { recordSubmission } = require('../lib/ledger');
+const { parseTier, tierLabel } = require('../lib/tiers');
 
 const redis = Redis.fromEnv();
 
@@ -37,9 +38,9 @@ function buildBossEmail(data, approveUrl, denyUrl) {
   const eventName = escapeHtml(data.eventName);
   const description = escapeHtml(data.description);
   const additionalNotes = escapeHtml(data.additionalNotes);
-  const { eventDate, sponsorshipAmount, sponsorshipTier } = data;
+  const { eventDate, sponsorshipAmount } = data;
 
-  const tier = escapeHtml(sponsorshipTier || 'Not specified');
+  const tier = escapeHtml(tierLabel(data.sponsorshipTier, data.sponsorshipTierOther) || 'Not specified');
   const amount = sponsorshipAmount ? `$${escapeHtml(String(sponsorshipAmount).replace(/^\$+/, ''))}` : 'Not specified';
   const date = eventDate ? escapeHtml(new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })) : 'Not specified';
 
@@ -162,7 +163,7 @@ module.exports = async (req, res) => {
   try {
     const {
       orgName, contactName, email, phone,
-      eventName, eventDate, sponsorshipAmount, sponsorshipTier,
+      eventName, eventDate, sponsorshipAmount,
       description, additionalNotes, files
     } = req.body || {};
 
@@ -174,14 +175,21 @@ module.exports = async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       return res.status(400).json({ error: 'Invalid email', fields: ['email'] });
     }
+    const tier = parseTier(req.body.sponsorshipTier, req.body.sponsorshipTierOther);
+    if (tier.error) {
+      return res.status(400).json({ error: tier.error, fields: ['sponsorshipTier'] });
+    }
+    const sponsorshipTier = tier.tier;
+    const sponsorshipTierOther = tier.other;
+    const data = { ...req.body, sponsorshipTier, sponsorshipTierOther };
 
     // Store the submission server-side; links carry only an unguessable token
     const token = newToken();
     await redis.set(pendingKey(token), JSON.stringify({
       orgName, contactName, email, phone,
-      eventName, eventDate, sponsorshipAmount, sponsorshipTier
+      eventName, eventDate, sponsorshipAmount, sponsorshipTier, sponsorshipTierOther
     }), { ex: SUBMISSION_TTL_SECONDS });
-    await recordSubmission(redis, token, req.body);
+    await recordSubmission(redis, token, data);
 
     const baseUrl = 'https://sponsorships.ztexconstruction.com';
     const approveUrl = `${baseUrl}/api/action?type=approve&id=${token}`;
@@ -202,7 +210,7 @@ module.exports = async (req, res) => {
       to: requestEmails.join(', '),
       replyTo: email,
       subject: `New Sponsorship Request — ${String(orgName || '').replace(/[\r\n]+/g, ' ')}`,
-      html: buildBossEmail(req.body, approveUrl, denyUrl),
+      html: buildBossEmail(data, approveUrl, denyUrl),
       attachments
     });
 
