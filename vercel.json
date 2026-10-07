@@ -32,6 +32,10 @@
       "dest": "/api/upload.js"
     },
     {
+      "src": "/api/cleanup",
+      "dest": "/api/cleanup.js"
+    },
+    {
       "src": "/api/confirm",
       "dest": "/api/confirm.js"
     },
@@ -54,6 +58,12 @@
     {
       "src": "/",
       "dest": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cleanup",
+      "schedule": "0 9 1 1,4,7,10 *"
     }
   ]
 }

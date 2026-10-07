@@ -390,7 +390,19 @@ function requestsCsv(rows) {
     .map(line => line.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
-function settingsPage(settings, message, isError) {
+function cleanupNote(last) {
+  const when = 'Unused attachments (files from abandoned forms) are deleted automatically on the 1st of January, April, July and October.';
+  if (!last) return `${when} It hasn't run yet.`;
+  const mb = (last.freedBytes / 1048576).toFixed(1);
+  return `${when} Last run ${fmtDateTime(last.ranAt)}: ${last.deleted} file${last.deleted === 1 ? '' : 's'} removed (${mb} MB), ${last.kept} kept.`;
+}
+
+async function lastCleanup() {
+  const v = await redis.get('cleanup:last');
+  return v ? parseStored(v) : null;
+}
+
+function settingsPage(settings, message, isError, last) {
   const lines = list => escapeHtml(list.join('\n'));
   return page('Admin', `
     ${topbar('settings')}
@@ -420,7 +432,8 @@ function settingsPage(settings, message, isError) {
       </div>
 
       <button class="btn" type="submit">Save Changes</button>
-    </form>`, 'mid');
+    </form>
+    <p class="foot">${escapeHtml(cleanupNote(last))}</p>`, 'mid');
 }
 
 // Streams one of a request's stored attachments. The file must belong to that ledger entry.
@@ -455,7 +468,7 @@ module.exports = async (req, res) => {
     if (authed) {
       const query = req.query || {};
       if (query.download) return downloadFile(res, query.download, query.file);
-      if (query.view === 'settings') return send(res, settingsPage(await getSettings(redis)));
+      if (query.view === 'settings') return send(res, settingsPage(await getSettings(redis), '', false, await lastCleanup()));
       const status = STATUS_LABELS[query.status] ? query.status : '';
       const q = typeof query.q === 'string' ? query.q.trim().slice(0, 100) : '';
       const rows = await listRequests(redis);
@@ -533,7 +546,7 @@ module.exports = async (req, res) => {
         approvers: approvers.values || current.approvers,
         requestEmails: requestEmails.values || current.requestEmails,
         marketingEmails: marketingEmails.values || current.marketingEmails
-      }, error, true), 400);
+      }, error, true, await lastCleanup()), 400);
     }
     const settings = {
       approvers: approvers.values,
@@ -541,7 +554,7 @@ module.exports = async (req, res) => {
       marketingEmails: marketingEmails.values
     };
     await saveSettings(redis, settings);
-    return send(res, settingsPage(settings, 'Saved.'));
+    return send(res, settingsPage(settings, 'Saved.', false, await lastCleanup()));
   }
 
   return res.status(400).send('Invalid request.');

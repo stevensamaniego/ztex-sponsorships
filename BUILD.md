@@ -147,6 +147,11 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - Verified against the real Blob store with a local server running the real handlers (Redis and SMTP stubbed): a 6 MB PDF + PNG uploaded from Playwright; leadership email and approval email carried both files at exact sizes; denial email carried its file; the admin download was SHA-256 identical; unauthenticated and wrong-request downloads were blocked; missing blob, bad path, mixed folders, 6 files, non-array and bad upload-token path were all rejected; deleted-blob fallback note confirmed. Test blobs deleted.
 - Known gap: files uploaded by someone who then abandons the form stay in the store (no cleanup job yet).
 
+### 2026-10-07 — Quarterly cleanup of abandoned uploads
+- Steven asked for a periodic cleanup about every 90 days. Vercel cron can't express "every 90 days", so `vercel.json` `crons` runs `/api/cleanup` at `0 9 1 1,4,7,10 *` (09:00 UTC on Jan/Apr/Jul/Oct 1).
+- `api/cleanup.js` requires `Authorization: Bearer $CRON_SECRET` (Vercel sends it automatically; the secret is in Vercel prod env and Keychain `ztex-sponsorships-cron`). It collects every `pathname` referenced by any ledger entry, lists `requests/` in Blob, and deletes blobs that aren't referenced **and** are over 24 hours old (so uploads in progress are safe). Files belonging to requests are never removed. The result is saved to Redis `cleanup:last` and shown at the bottom of the admin Settings tab.
+- Verified against the real Blob store: 401 without or with a wrong secret; a fresh orphan was kept; with the clock moved forward 2 days the orphan was deleted and the referenced file kept; the Settings note renders.
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.
