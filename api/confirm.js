@@ -2,7 +2,8 @@ const nodemailer = require('nodemailer');
 const { Redis } = require('@upstash/redis');
 const { SUBMISSION_TTL_SECONDS, isValidToken, pendingKey, decisionKey, escapeHtml, parseStored } = require('../lib/security');
 
-const { getSettings } = require('../lib/settings');
+const { getSettings, isApprover } = require('../lib/settings');
+const { parseCookies, readSession, messagePage, sendPage } = require('../lib/approver');
 const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'];
 
 const redis = Redis.fromEnv();
@@ -24,7 +25,7 @@ function stripDollar(val) {
   return val ? String(val).replace(/^\$+/, '') : '';
 }
 
-function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTier, rawBossNotes, rawApproverName) {
+function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTier, rawBossNotes, approver) {
   const orgName = escapeHtml(submission.orgName);
   const contactName = escapeHtml(submission.contactName);
   const email = escapeHtml(submission.email);
@@ -35,7 +36,7 @@ function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjuste
   const adjustedAmount = escapeHtml(rawAdjustedAmount);
   const adjustedTier = escapeHtml(rawAdjustedTier);
   const bossNotes = escapeHtml(rawBossNotes);
-  const approverName = escapeHtml(rawApproverName);
+  const approverName = approver ? `${escapeHtml(approver.name)} (${escapeHtml(approver.email)})` : '';
 
   const finalAmount = stripDollar(adjustedAmount || escapeHtml(sponsorshipAmount));
   const finalTier = adjustedTier || sponsorshipTier;
@@ -192,19 +193,28 @@ function alreadyHandledHtml(parsed) {
         <style>body{margin:0;background:#111;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}
         .c{background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:48px;text-align:center;max-width:480px;}
         h1{color:#fff;margin:0 0 12px;}p{color:#999;font-size:15px;line-height:1.6;margin:0;}.g{color:#D4AF37;font-weight:600;}</style></head>
-        <body><div class="c"><h1>Already Handled</h1><p>This request was already <strong style="color:#fff;">${escapeHtml(parsed.action)}d</strong> by <span class="g">${escapeHtml(parsed.approver)}</span>. No further action needed.</p></div></body></html>`;
+        <body><div class="c"><h1>Already Handled</h1><p>This request was already <strong style="color:#fff;">${escapeHtml(parsed.action)}d</strong> by <span class="g">${escapeHtml(parsed.approverEmail ? `${parsed.approver} (${parsed.approverEmail})` : parsed.approver)}</span>. No further action needed.</p></div></body></html>`;
 }
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
-  const { type, id, adjustedAmount, adjustedTier, bossNotes, approverName } = req.body;
+  // Identity comes only from the Microsoft sign-in session — never from the form
+  const { type, id, adjustedAmount, adjustedTier, bossNotes } = req.body || {};
 
   if ((type !== 'approve' && type !== 'deny') || !isValidToken(id)) {
     return res.status(400).send('Invalid request.');
   }
+  const session = readSession(parseCookies(req));
+  if (!session) {
+    return sendPage(res, messagePage('Sign-in required',
+      'Your sign-in expired. Please open the approve/deny link from the email again.', 401));
+  }
   const settings = await getSettings(redis);
-  if (!settings.approvers.includes(approverName)) return res.status(400).send('Invalid approver.');
+  if (!isApprover(settings, session.email)) {
+    return sendPage(res, messagePage('Not an approver',
+      `Signed in as ${session.email}, which isn't an approver for sponsorship requests.`, 403));
+  }
   if (adjustedTier && !TIERS.includes(adjustedTier)) return res.status(400).send('Invalid tier.');
 
   const stored = await redis.get(pendingKey(id));
@@ -223,7 +233,7 @@ module.exports = async (req, res) => {
 
   // Atomically claim the decision so two approvers can't both act
   const key = decisionKey(id);
-  const decision = JSON.stringify({ approver: approverName, action: type, orgName: submission.orgName });
+  const decision = JSON.stringify({ approver: session.name, approverEmail: session.email, action: type, orgName: submission.orgName });
   const claimed = await redis.set(key, decision, { nx: true, ex: SUBMISSION_TTL_SECONDS });
   if (!claimed) {
     const existing = await redis.get(key);
@@ -239,7 +249,7 @@ module.exports = async (req, res) => {
       subject: approved
         ? `✅ Sponsorship Approved — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`
         : `❌ Sponsorship Denied — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`,
-      html: buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes, approverName)
+      html: buildMarketingEmail(submission, approved, adjustedAmount, adjustedTier, bossNotes, session)
     });
 
     await redis.del(pendingKey(id));

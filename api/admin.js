@@ -150,8 +150,9 @@ function settingsPage(settings, message, isError) {
       <input type="hidden" name="action" value="save">
 
       <div class="field">
-        <p class="section-title">Approvers</p>
-        <p class="hint">Names shown in the "Approving / Denying As" list on the approval page. One per line.</p>
+        <p class="section-title">Approvers (Microsoft 365 emails)</p>
+        <p class="hint">People allowed to approve or deny. They sign in with their ZTEX Microsoft account. One email per line.</p>
+        ${settings.approvers.length ? '' : '<div class="msg err">No approvers are set, so nobody can approve or deny requests. Add at least one Microsoft 365 email.</div>'}
         <textarea name="approvers">${lines(settings.approvers)}</textarea>
       </div>
 
@@ -238,7 +239,7 @@ module.exports = async (req, res) => {
   if (!authed) return send(res, loginPage('Your session expired. Please sign in again.'), 401);
 
   if (body.action === 'save') {
-    const approvers = parseLines(body.approvers, { label: 'Approvers' });
+    const approvers = parseLines(body.approvers, { label: 'Approvers', email: true, lowercase: true });
     const requestEmails = parseLines(body.requestEmails, { label: 'New Request Inbox', email: true });
     const marketingEmails = parseLines(body.marketingEmails, { label: 'Marketing Team', email: true });
     const error = approvers.error || requestEmails.error || marketingEmails.error;

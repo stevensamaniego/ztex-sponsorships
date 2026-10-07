@@ -32,6 +32,14 @@
       "dest": "/api/confirm.js"
     },
     {
+      "src": "/api/auth/login",
+      "dest": "/api/auth-login.js"
+    },
+    {
+      "src": "/api/auth/callback",
+      "dest": "/api/auth-callback.js"
+    },
+    {
       "src": "/thanks",
       "dest": "/thanks.html"
     },

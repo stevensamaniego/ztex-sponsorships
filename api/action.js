@@ -1,6 +1,7 @@
 const { Redis } = require('@upstash/redis');
 const { isValidToken, pendingKey, decisionKey, escapeHtml, parseStored } = require('../lib/security');
-const { getSettings } = require('../lib/settings');
+const { getSettings, isApprover } = require('../lib/settings');
+const { msConfig, parseCookies, readSession, loginUrl, messagePage, sendPage, notConfiguredPage } = require('../lib/approver');
 
 const redis = Redis.fromEnv();
 
@@ -8,7 +9,7 @@ const TIERS = [
   'Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'
 ];
 
-function reviewForm(type, token, submission, lastApprover, approvers) {
+function reviewForm(type, token, submission, session) {
   const orgName = escapeHtml(submission.orgName);
   const contactName = escapeHtml(submission.contactName);
   const email = escapeHtml(submission.email);
@@ -19,7 +20,6 @@ function reviewForm(type, token, submission, lastApprover, approvers) {
   const actionLabel = isApprove ? 'Confirm Approval' : 'Confirm Denial';
   const actionColor = isApprove ? '#1a7a3c' : '#C41E3A';
   const tierOptions = TIERS.map(t => `<option value="${t}"${t === sponsorshipTier ? ' selected' : ''}>${t}</option>`).join('');
-  const approverOptions = approvers.map(a => `<option value="${escapeHtml(a)}"${a === lastApprover ? ' selected' : ''}>${escapeHtml(a)}</option>`).join('');
 
   return `<!DOCTYPE html>
 <html>
@@ -63,6 +63,8 @@ function reviewForm(type, token, submission, lastApprover, approvers) {
            cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }
     .btn:hover { opacity: 0.9; }
     .divider { border: none; border-top: 1px solid #2a2a2a; margin: 24px 0; }
+    .signer { font-size: 14px; color: #999; }
+    .signer strong { color: #fff; }
   </style>
 </head>
 <body>
@@ -84,8 +86,7 @@ function reviewForm(type, token, submission, lastApprover, approvers) {
 
       <p class="section-title">Your Signature</p>
       <div class="field">
-        <label>Approving / Denying As</label>
-        <select name="approverName" id="approverName">${approverOptions}</select>
+        <p class="signer">Signing as <strong>${escapeHtml(session.name)}</strong> (${escapeHtml(session.email)})</p>
       </div>
 
       ${isApprove ? `
@@ -113,25 +114,8 @@ function reviewForm(type, token, submission, lastApprover, approvers) {
       <button type="submit" class="btn">${actionLabel}</button>
     </form>
   </div>
-  <script>
-    // Save approver selection to cookie
-    document.getElementById('approverName').addEventListener('change', function() {
-      document.cookie = 'lastApprover=' + encodeURIComponent(this.value) + '; path=/; max-age=' + (60*60*24*365);
-    });
-  </script>
 </body>
 </html>`;
-}
-
-function parseCookies(req) {
-  const list = {};
-  const header = req.headers.cookie;
-  if (!header) return list;
-  header.split(';').forEach(cookie => {
-    const [key, ...val] = cookie.trim().split('=');
-    list[key.trim()] = decodeURIComponent(val.join('='));
-  });
-  return list;
 }
 
 function alreadyHandledPage(rawOrgName, rawHandledBy, action) {
@@ -174,24 +158,39 @@ module.exports = async (req, res) => {
     return res.status(400).send('Invalid or expired link.');
   }
 
+  // Approvers must be signed in with their ZTEX Microsoft account
+  if (!msConfig()) return sendPage(res, notConfiguredPage());
+  const session = readSession(parseCookies(req));
+  if (!session) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Location', loginUrl(`/api/action?type=${type}&id=${id}`));
+    return res.status(302).send('');
+  }
+  const settings = await getSettings(redis);
+  if (!settings.approvers.length) {
+    return sendPage(res, messagePage('No approvers yet',
+      'No approvers are configured yet. An administrator needs to add approver emails in /admin.', 503));
+  }
+  if (!isApprover(settings, session.email)) {
+    return sendPage(res, messagePage('Not an approver',
+      `Signed in as ${session.email}, which isn't an approver for sponsorship requests.`, 403));
+  }
+
   // Already decided?
   const existing = await redis.get(decisionKey(id));
   if (existing) {
-    const { approver, action, orgName } = parseStored(existing);
+    const { approver, approverEmail, action, orgName } = parseStored(existing);
     res.setHeader('Content-Type', 'text/html');
-    return res.status(200).send(alreadyHandledPage(orgName, approver, action));
+    const handledBy = approverEmail ? `${approver} (${approverEmail})` : approver;
+    return res.status(200).send(alreadyHandledPage(orgName, handledBy, action));
   }
 
   const stored = await redis.get(pendingKey(id));
   if (!stored) return res.status(404).send('This link is invalid or has expired.');
   const submission = parseStored(stored);
 
-  // Read last approver from cookie
-  const cookies = parseCookies(req);
-  const lastApprover = cookies.lastApprover || '';
-
   // Show the review/edit form
   res.setHeader('Content-Type', 'text/html');
-  const { approvers } = await getSettings(redis);
-  return res.status(200).send(reviewForm(type, id, submission, lastApprover, approvers));
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).send(reviewForm(type, id, submission, session));
 };

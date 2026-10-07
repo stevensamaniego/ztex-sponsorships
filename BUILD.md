@@ -9,7 +9,8 @@ A community sponsorship request portal for ZTEX Construction at https://sponsors
 - Front end: static `index.html` (multi-step form), `thanks.html`, `assets/css/styles.css`, `assets/js/main.js` — plain HTML/CSS/JS, ZTEX Red/Yellow branding
 - Back end: three **Vercel Node serverless functions** (`vercel.json` v2 builds/routes)
   - `api/submit.js` — receives the form as JSON (files base64-encoded in the browser via `FileReader`), generates a `submissionId` (UUID), base64-encodes the submission into Approve/Deny links, emails the request with file attachments
-  - `api/action.js` — Approve/Deny link target; renders the review form (adjust amount/tier, notes, approver select remembered in a `lastApprover` cookie); shows "Already handled" if the submission is locked
+  - `api/action.js` — Approve/Deny link target; requires Microsoft sign-in (approver identity from the Entra ID token), then renders the review form (adjust amount/tier, notes, "Signing as Name (email)"); shows "Already handled" if the submission is locked
+  - `api/auth-login.js` / `api/auth-callback.js` (`/api/auth/login`, `/api/auth/callback`) — Microsoft Entra ID OIDC sign-in for approvers (`lib/approver.js`)
   - `api/confirm.js` — finalizes: checks/sets a Redis lock `submission:<id>` (90-day TTL) to block double approve/deny, then emails marketing the decision
 - Email: `nodemailer` via Office 365 SMTP (`smtp.office365.com:587`), sent from the sponsorships mailbox using Send As
 - State: **Upstash Redis** (`@upstash/redis`, `Redis.fromEnv()`), provisioned through Vercel; used only for the double-action lock
@@ -29,6 +30,8 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - `MARKETING_EMAIL` — comma-separated recipients for decision notifications (code has a fallback)
 - Redis (from the Vercel/Upstash integration): `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN`, `KV_URL`, `REDIS_URL`
 - `VERCEL_OIDC_TOKEN` (written by `vercel env pull`)
+- `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET` — /admin login; `ADMIN_SESSION_SECRET` also signs approver sign-in cookies
+- `MS_TENANT_ID` (ZTEX tenant `002232eb-1c3d-4754-9b76-6e8633a0fc69`), `MS_CLIENT_ID`, `MS_CLIENT_SECRET` — Entra app registration for approver sign-in. If any is missing, approve/deny pages fail closed ("Approver sign-in isn't configured yet").
 
 ## Key decisions
 - 2026-05-11 — Initial build with a Node/Express email backend, then Vercel serverless config — reason not recorded.
@@ -89,12 +92,27 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - Updated `SMTP_PASSWORD` (production, sensitive) to the current app password, redeployed. Live test submission returned `{"ok":true}`.
 - The timeclock@ app password is still due for rotation (it was hardcoded in ZPresence until today); when rotated, update this env var too.
 
+### 2026-10-06 — Microsoft sign-in for approvers
+- Problem: the review page had an "Approving / Denying As" dropdown, so anyone holding an approve/deny link could sign as any approver.
+- Approvers now sign in with their ZTEX Microsoft 365 account (Entra ID). OIDC authorization-code flow with PKCE (S256), confidential client, built on Node `crypto` + `fetch` (no new dependencies), in `lib/approver.js`:
+  - `GET /api/auth/login?returnTo=…` → state, nonce and PKCE verifier stored in a 10-minute signed HttpOnly/Secure/SameSite=Lax cookie (`ztex_oidc_flow`, path `/api/auth`), redirect to the tenant's `/oauth2/v2.0/authorize` with `domain_hint=ztexconstruction.com` and no `prompt` (already signed-in users pass silently).
+  - `GET /api/auth/callback` → checks state, redeems the code at the token endpoint (client secret + code_verifier), validates the `id_token` claims (iss, aud, tid, nonce, exp). Signature isn't checked: the token comes straight from the token endpoint over TLS to a confidential client (OIDC Core 3.1.3.7). Identity = lowercased `preferred_username` (fallback `email`), name = `name`. Issues an 8h `ztex_approver` cookie (path `/`, signed with `ADMIN_SESSION_SECRET`, purpose "approver" in a JSON payload, so it can't be swapped with admin cookies). Redirects back only to `/api/action?…`, otherwise `/`.
+- `/api/action` redirects to sign-in when there's no session, 403s signed-in people who aren't approvers, shows "No approvers are configured yet" when the list is empty, and shows "Signing as Name (email)" instead of the dropdown (`lastApprover` cookie removed).
+- `/api/confirm` takes identity only from the session cookie (any `approverName` in the form is ignored), re-checks the approver list, records `approver` + `approverEmail`, and the marketing email says "Decision made by: Name (email)". Atomic claim / release-on-email-failure unchanged.
+- `/admin`: approvers are now **Microsoft 365 email addresses** (validated, lowercased, at least one required on save); warning shown when none are set. Default approvers are empty; previously stored names are ignored.
+- New env vars: `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET` (not yet set in Vercel).
+- Verified with 79 mocked end-to-end checks (login URL/PKCE, callback state/nonce/tenant/aud/issuer/expiry rejection, open-redirect, non-approver 403, spoofed approverName ignored, cookie purpose separation, fail-closed config, admin approver validation, plus the existing request/admin/TOTP tests).
+- Work is on local branch `feature/microsoft-signin`; not pushed or deployed (waiting for the Entra app registration).
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.
 - Possible cleanup (not requested): remove unused dependencies (`express`, `multer`, `formidable`, `@vercel/kv`) and the dead `start`/`dev` scripts; turn off the stale GitHub Pages site.
 
 ## Gotchas
+- Approver sign-in needs an Entra app registration in the ZTEX tenant: single tenant, Web redirect URI exactly `https://sponsorships.ztexconstruction.com/api/auth/callback`, a client secret, delegated Microsoft Graph permissions `openid`, `profile`, `email` with admin consent granted (so approvers aren't prompted). Put its IDs/secret in `MS_TENANT_ID` / `MS_CLIENT_ID` / `MS_CLIENT_SECRET` (production) before deploying. The secret expires — renew it in Entra and update `MS_CLIENT_SECRET` before then, or approvals stop working.
+- After deploying Microsoft sign-in, approver emails must be entered in `/admin` (old approver names are ignored); until then every approve/deny link shows "No approvers are configured yet".
+- Sign-in only works on the production domain (the redirect URI is hardcoded), not on Vercel preview URLs.
 - Reset admin 2-step (lost phone): delete Redis keys `admin:totp` and `admin:totp:pending`; next login shows a new QR. Rotating `ADMIN_SESSION_SECRET` also invalidates the stored TOTP secret (forces re-enrollment).
 - To change the admin password: generate a new scrypt hash (format `scrypt$N$r$p$salt$hash`, base64), update `ADMIN_PASSWORD_HASH` in Vercel production, redeploy, and update the Keychain entry. Rotating `ADMIN_SESSION_SECRET` signs everyone out.
 - Redis is now required for submissions too (request records live there). If the Upstash store is removed again, the form stops working — check `vercel integration list` first.
