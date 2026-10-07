@@ -164,6 +164,11 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - The approval page summary shows the event date and time; admin details show the date and time and "Calendar invite: Sent to N people / Not sent"; the CSV adds Event Time.
 - Verified: calendar unit checks (validation, formatting, midnight/year rollover, Free, reminder, folding/escaping, all-day fallback); handler flow (400 on missing date or time, leadership email/approval page show the time, approve → marketing email + invite to 3 deduped recipients with the attachment and 6–7 PM Mountain, deny → no invite, SMTP failure on the invite → approval still succeeds and the ledger shows not sent); Playwright form check. A real invite was sent to steven@ only for Outlook verification.
 
+### 2026-10-07 — Start time optional; all-day invite fallback
+- At Steven's request, Event Start Time is optional again (Event Date stays required). `parseEventWhen` accepts an empty time and rejects a malformed one.
+- With no time, the invite is an all-day Free event (VALUE=DATE, no VTIMEZONE) with its reminder at `-PT18H` (6 AM the day before; `-P1D` on an all-day event would fire at midnight). Timed events are unchanged (1 hour, `-P1D`). The invite body says "(all day)".
+- Verified: calendar unit checks, handler flow (date-only submit → 200 → approve → all-day Free invite), and Playwright (date still blocks, time optional, payload `eventTime: ""`).
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.

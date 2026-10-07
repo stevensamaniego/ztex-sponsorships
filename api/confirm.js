@@ -172,7 +172,7 @@ function inviteContent(d, approvedAmount, approvedTier, bossNotes, approver) {
     ['Email', d.email],
     ['Phone', d.phone],
     ['Event', d.eventName],
-    ['When', `${formatEventWhen(d.eventDate, d.eventTime)}${d.eventTime ? ' (Mountain Time)' : ''}`],
+    ['When', `${formatEventWhen(d.eventDate, d.eventTime)}${d.eventTime ? ' (Mountain Time)' : ' (all day)'}`],
     ['Approved amount', formatMoney(approvedAmount) || 'Not specified'],
     ['Approved tier', approvedTier || 'Not specified'],
     ['Approved by', approver ? `${approver.name} (${approver.email})` : '']
