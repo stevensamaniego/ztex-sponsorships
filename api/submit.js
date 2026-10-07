@@ -4,13 +4,14 @@ const { SUBMISSION_TTL_SECONDS, newToken, pendingKey, escapeHtml } = require('..
 const { getSettings } = require('../lib/settings');
 const { recordSubmission } = require('../lib/ledger');
 const { parseTier, tierLabel } = require('../lib/tiers');
+const { verifyFiles, loadAttachments } = require('../lib/files');
 
 const redis = Redis.fromEnv();
 
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '15mb'
+      sizeLimit: '1mb'
     }
   }
 };
@@ -181,13 +182,18 @@ module.exports = async (req, res) => {
     }
     const sponsorshipTier = tier.tier;
     const sponsorshipTierOther = tier.other;
-    const data = { ...req.body, sponsorshipTier, sponsorshipTierOther };
+    const verified = await verifyFiles(files);
+    if (verified.error) {
+      return res.status(400).json({ error: verified.error, fields: ['files'] });
+    }
+    const data = { ...req.body, sponsorshipTier, sponsorshipTierOther, files: verified.files };
 
     // Store the submission server-side; links carry only an unguessable token
     const token = newToken();
     await redis.set(pendingKey(token), JSON.stringify({
       orgName, contactName, email, phone,
-      eventName, eventDate, sponsorshipAmount, sponsorshipTier, sponsorshipTierOther
+      eventName, eventDate, sponsorshipAmount, sponsorshipTier, sponsorshipTierOther,
+      files: verified.files
     }), { ex: SUBMISSION_TTL_SECONDS });
     await recordSubmission(redis, token, data);
 
@@ -195,12 +201,7 @@ module.exports = async (req, res) => {
     const approveUrl = `${baseUrl}/api/action?type=approve&id=${token}`;
     const denyUrl = `${baseUrl}/api/action?type=deny&id=${token}`;
 
-    // Build file attachments
-    const attachments = (files || []).map(f => ({
-      filename: f.name,
-      content: Buffer.from(f.data, 'base64'),
-      contentType: f.type
-    }));
+    const attachments = await loadAttachments(verified.files);
 
     const { requestEmails } = await getSettings(redis);
     const transporter = createTransporter();

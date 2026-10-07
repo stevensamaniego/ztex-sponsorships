@@ -7,7 +7,11 @@ const {
   clientIp, isLockedOut, recordFailedLogin, clearFailedLogins
 } = require('../lib/auth');
 const { isEnrolled, beginEnrollment, confirmEnrollment, verifyLoginCode } = require('../lib/mfa');
-const { listRequests } = require('../lib/ledger');
+const { Readable } = require('stream');
+const { get: getBlob } = require('@vercel/blob');
+const { listRequests, ledgerKey } = require('../lib/ledger');
+const { isUploadPath } = require('../lib/files');
+const { isValidToken, parseStored } = require('../lib/security');
 const { tierLabel } = require('../lib/tiers');
 
 const redis = Redis.fromEnv();
@@ -290,7 +294,9 @@ function ledgerRow(r) {
             ${field('Amount', money(requested))}
             ${field('Tier', e(tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)))}
             ${field('Submitted', fmtDateTime(r.submittedAt))}
-            ${field('Attachments', (r.files || []).map(e).join('<br>'))}
+            ${field('Attachments', (r.files || []).map(f => typeof f === 'string' || !f.pathname
+              ? e(f.name || f)
+              : `<a href="/admin?download=${encodeURIComponent(r.id)}&amp;file=${encodeURIComponent(f.pathname)}">${e(f.name)}</a>`).join('<br>'))}
           </dl>
         </div>
         <div>
@@ -378,7 +384,7 @@ function requestsCsv(rows) {
     ['Decided By', r => r.approver], ['Decided By Email', r => r.approverEmail],
     ['Decided', r => r.decidedAt ? new Date(r.decidedAt).toISOString() : ''],
     ['Leadership Notes', r => r.bossNotes], ['Description', r => r.description],
-    ['Additional Notes', r => r.additionalNotes], ['Attachments', r => (r.files || []).join('; ')]
+    ['Additional Notes', r => r.additionalNotes], ['Attachments', r => (r.files || []).map(f => (f && f.name) || f).join('; ')]
   ];
   return [cols.map(c => c[0]), ...rows.map(r => cols.map(c => c[1](r)))]
     .map(line => line.map(csvCell).join(',')).join('\r\n') + '\r\n';
@@ -417,6 +423,23 @@ function settingsPage(settings, message, isError) {
     </form>`, 'mid');
 }
 
+// Streams one of a request's stored attachments. The file must belong to that ledger entry.
+async function downloadFile(res, id, pathname) {
+  if (!isValidToken(id) || !isUploadPath(pathname)) return res.status(400).send('Invalid request.');
+  const stored = await redis.get(ledgerKey(id));
+  const file = stored && (parseStored(stored).files || []).find(f => f && f.pathname === pathname);
+  if (!file) return res.status(404).send('File not found.');
+  const result = await getBlob(pathname, { access: 'private' });
+  if (!result || result.statusCode !== 200) return res.status(404).send('File not found.');
+  const ascii = String(file.name).replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  res.setHeader('Content-Type', result.blob.contentType || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(200);
+  Readable.fromWeb(result.stream).pipe(res);
+}
+
 function send(res, html, status = 200) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
@@ -431,6 +454,7 @@ module.exports = async (req, res) => {
   if (req.method === 'GET') {
     if (authed) {
       const query = req.query || {};
+      if (query.download) return downloadFile(res, query.download, query.file);
       if (query.view === 'settings') return send(res, settingsPage(await getSettings(redis)));
       const status = STATUS_LABELS[query.status] ? query.status : '';
       const q = typeof query.q === 'string' ? query.q.trim().slice(0, 100) : '';

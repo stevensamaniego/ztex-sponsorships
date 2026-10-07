@@ -28,6 +28,10 @@
       "dest": "/api/action.js"
     },
     {
+      "src": "/api/upload",
+      "dest": "/api/upload.js"
+    },
+    {
       "src": "/api/confirm",
       "dest": "/api/confirm.js"
     },

@@ -5,6 +5,7 @@ const { SUBMISSION_TTL_SECONDS, isValidToken, pendingKey, decisionKey, escapeHtm
 const { getSettings, isApprover } = require('../lib/settings');
 const { recordDecision } = require('../lib/ledger');
 const { parseTier, tierLabel } = require('../lib/tiers');
+const { loadAttachments } = require('../lib/files');
 const { parseCookies, readSession, messagePage, sendPage } = require('../lib/approver');
 
 const redis = Redis.fromEnv();
@@ -26,7 +27,7 @@ function stripDollar(val) {
   return val ? String(val).replace(/^\$+/, '') : '';
 }
 
-function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTierLabel, rawBossNotes, approver) {
+function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTierLabel, rawBossNotes, approver, attachmentsMissing) {
   const orgName = escapeHtml(submission.orgName);
   const contactName = escapeHtml(submission.contactName);
   const email = escapeHtml(submission.email);
@@ -121,6 +122,17 @@ function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjuste
                 </td>
               </tr>` : ''}
             </table>
+
+            ${(submission.files || []).length ? `
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr><td style="background:#f8f8f8;border-left:3px solid #C41E3A;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#C41E3A;">Submitter's Documents</td></tr>
+              <tr><td style="padding:12px 14px;font-size:14px;color:#444;line-height:1.7;">
+                ${submission.files.map(f => `📎 ${escapeHtml(f.name || f)}`).join('<br>')}
+                <div style="font-size:12px;color:${attachmentsMissing ? '#C41E3A' : '#888'};margin-top:6px;">${attachmentsMissing
+                  ? 'These files couldn\'t be attached to this email. Try downloading them from the sponsorship admin page, or ask the submitter for copies.'
+                  : 'Attached to this email.'}</div>
+              </td></tr>
+            </table>` : ''}
 
             ${bossNotes ? `
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
@@ -246,6 +258,16 @@ module.exports = async (req, res) => {
   }
 
   try {
+    // Forward the submitter's documents; if they can't be read, still send the decision and say so
+    let attachments = [];
+    let attachmentsMissing = false;
+    try {
+      attachments = await loadAttachments((submission.files || []).filter(f => f && f.pathname));
+    } catch (err) {
+      console.error('Attachment load failed:', err);
+      attachmentsMissing = true;
+    }
+
     const transporter = createTransporter();
     await transporter.sendMail({
       from: '"ZTEX Sponsorships" <sponsorships@ztexconstruction.com>',
@@ -253,7 +275,8 @@ module.exports = async (req, res) => {
       subject: approved
         ? `✅ Sponsorship Approved — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`
         : `❌ Sponsorship Denied — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`,
-      html: buildMarketingEmail(submission, approved, adjustedAmount, tierLabel(adjustedTier, adjustedTierOther), bossNotes, session)
+      html: buildMarketingEmail(submission, approved, adjustedAmount, tierLabel(adjustedTier, adjustedTierOther), bossNotes, session, attachmentsMissing),
+      attachments
     });
 
     await redis.del(pendingKey(id));

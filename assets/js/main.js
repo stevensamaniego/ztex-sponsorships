@@ -274,6 +274,7 @@ const fileList = document.getElementById('fileList');
 let uploadedFiles = [];
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_TOTAL_SIZE = 20 * 1024 * 1024; // keeps forwarded emails under mail size limits
 const MAX_FILES = 5;
 const ALLOWED_TYPES = [
     'application/pdf',
@@ -312,6 +313,14 @@ function handleFiles(files) {
         }
         if (file.size > MAX_FILE_SIZE) {
             showToast(`"${file.name}" exceeds 10MB limit`);
+            return;
+        }
+        if (!ALLOWED_TYPES.includes(file.type)) {
+            showToast(`"${file.name}" isn't a supported file type`);
+            return;
+        }
+        if (uploadedFiles.reduce((sum, f) => sum + f.size, 0) + file.size > MAX_TOTAL_SIZE) {
+            showToast('Attachments can total 20MB at most');
             return;
         }
         // Check for duplicates
@@ -462,19 +471,25 @@ form.addEventListener('submit', async (e) => {
     }
 
     const submitBtn = form.querySelector('.btn-submit');
+    const loadingText = submitBtn.querySelector('.btn-loading-text');
     submitBtn.classList.add('loading');
+    submitBtn.disabled = true;
 
-    // Convert files to base64
-    const encodedFiles = await Promise.all(uploadedFiles.map(file => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({
-            name: file.name,
-            type: file.type,
-            data: reader.result.split(',')[1]
+    // Files go straight to private storage (no 4.5MB request limit); the request carries their paths
+    let storedFiles;
+    try {
+        storedFiles = await uploadFiles(uploadedFiles, (i, pct) => {
+            loadingText.textContent = `Uploading file ${i + 1} of ${uploadedFiles.length} (${pct}%)...`;
         });
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    })));
+    } catch (err) {
+        console.error('Upload error:', err);
+        showToast('A file failed to upload. Please try again or call (915) 591-6900.');
+        submitBtn.classList.remove('loading');
+        submitBtn.disabled = false;
+        loadingText.textContent = 'Submitting...';
+        return;
+    }
+    loadingText.textContent = 'Submitting...';
 
     // Build JSON payload
     const payload = {
@@ -489,7 +504,7 @@ form.addEventListener('submit', async (e) => {
         sponsorshipTierOther: tierOtherInput.value.trim(),
         description: document.getElementById('description').value.trim(),
         additionalNotes: document.getElementById('additionalNotes').value.trim(),
-        files: encodedFiles
+        files: storedFiles
     };
 
     try {
@@ -499,16 +514,50 @@ form.addEventListener('submit', async (e) => {
             headers: { 'Content-Type': 'application/json' }
         });
 
-        if (!response.ok) throw new Error('Submission failed');
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.error || 'Submission failed');
+        }
 
         // Redirect to thank you page
         window.location.href = '/thanks';
     } catch (err) {
         console.error('Submission error:', err);
-        showToast('Something went wrong. Please try again or call (915) 591-6900.');
+        showToast(err.message && err.message !== 'Submission failed' && !/fetch/i.test(err.message)
+            ? err.message
+            : 'Something went wrong. Please try again or call (915) 591-6900.');
         submitBtn.classList.remove('loading');
+        submitBtn.disabled = false;
     }
 });
+
+function randomId() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function safeFileName(name) {
+    const clean = name.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+/, '').slice(-120);
+    return clean || 'file';
+}
+
+async function uploadFiles(files, onProgress) {
+    if (!files.length) return [];
+    const folder = `requests/${randomId()}`;
+    const stored = [];
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const blob = await window.BlobUpload.upload(`${folder}/${safeFileName(file.name)}`, file, {
+            access: 'private',
+            handleUploadUrl: '/api/upload',
+            contentType: file.type,
+            onUploadProgress: ({ percentage }) => onProgress(i, Math.round(percentage))
+        });
+        stored.push({ pathname: blob.pathname, name: file.name });
+    }
+    return stored;
+}
 
 // --- Reset Form ---
 window.resetForm = function() {

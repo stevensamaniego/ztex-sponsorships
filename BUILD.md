@@ -134,6 +134,19 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - `/api/confirm` validates `adjustedTier`/`adjustedTierOther` on approve (400 page, no decision claimed); the marketing email, ledger, admin and CSV use labels.
 - Verified: 20 handler checks in the in-memory harness, email HTML checks, and Playwright runs of the public form (show/hide, required, Enter blocked, payload) and the approval page (prefill, toggle, browser validation).
 
+### 2026-10-07 — Store attachments; forward them to marketing with the decision
+- Asked by Steven: marketing should receive the submitter's files with the approved/denied email. Files used to be base64 in the submit body, emailed once to leadership and never stored.
+- Found along the way: Vercel rejects function request bodies over ~4.5 MB (a probe of prod gave 413), so any request with more than ~3 MB of attachments was failing even though the form promised 10 MB per file.
+- Private Vercel Blob store `ztex-sponsorships-files` (created with `vercel blob create-store --access private`; `BLOB_READ_WRITE_TOKEN` in Production/Preview/Development).
+- Browser uploads go straight to Blob through `@vercel/blob/client` `upload()`, bundled with esbuild into `assets/js/blob-upload.js` (IIFE, `window.BlobUpload`; no CDN). Rebuild: `printf "import { upload } from '@vercel/blob/client';\nwindow.BlobUpload = { upload };\n" > _e.mjs && npx esbuild _e.mjs --bundle --minify --format=iife --platform=browser --target=es2019 --outfile=assets/js/blob-upload.js`. Paths are `requests/<22-char random id>/<sanitized name>` with a random suffix; the submit button shows per-file upload progress.
+- `api/upload.js` (`handleUpload`) issues tokens only for that path shape, with the allowed content types, 10 MB max and a 10-minute expiry, and at most 30 tokens per IP per hour (Redis `uploadrate:`).
+- `lib/files.js`: `verifyFiles` (at most 5 files, all in one folder, each checked with `head()` for existence, size ≤10 MB, allowed type, total ≤20 MB) and `loadAttachments` (`get()` with `access: 'private'` into nodemailer attachments). 20 MB total keeps forwarded mail under Exchange's ~35 MB limit after encoding. Submit body limit lowered to 1 MB.
+- `/api/submit` verifies the files, stores `{ pathname, name, size, contentType }` in the pending record and ledger, and attaches them to the leadership email.
+- `/api/confirm` attaches them to the approved **and** denied marketing emails, with a "Submitter's Documents" list. If a file can't be read, the decision email is still sent, with a note instead of the attachments.
+- `/admin`: attachment names are download links (`/admin?download=<id>&file=<pathname>`, signed-in only; the file must belong to that ledger entry; streamed as an attachment with `nosniff`). The CSV lists attachment names.
+- Verified against the real Blob store with a local server running the real handlers (Redis and SMTP stubbed): a 6 MB PDF + PNG uploaded from Playwright; leadership email and approval email carried both files at exact sizes; denial email carried its file; the admin download was SHA-256 identical; unauthenticated and wrong-request downloads were blocked; missing blob, bad path, mixed folders, 6 files, non-array and bad upload-token path were all rejected; deleted-blob fallback note confirmed. Test blobs deleted.
+- Known gap: files uploaded by someone who then abandons the form stay in the store (no cleanup job yet).
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.
