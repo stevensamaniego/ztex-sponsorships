@@ -122,6 +122,9 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - No backfill: the 16 existing Redis records were all test submissions, so the ledger starts empty.
 - Verified with an in-memory Redis harness running the real handlers: submit ×3 → approve with adjustment, deny, double-decision blocked; filters, search, CSV, XSS escaping, unauthenticated access blocked; legacy (pre-ledger) decision; expiry. Visual check with Playwright at desktop and phone widths.
 
+### 2026-10-07 — Settings header fix
+- On desktop the Settings tab's 560px card wrapped "Sign out" onto two lines. The settings card is now 680px (`.card.mid`), tabs and Sign out are `white-space: nowrap`, and `.mid` gets the same tighter phone padding as `.wide`. Verified with Playwright at 1280 and 390 px (single-line button, no overflow).
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.

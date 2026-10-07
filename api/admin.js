@@ -28,7 +28,7 @@ function sameOrigin(req) {
   try { return new URL(origin).host === req.headers.host; } catch { return false; }
 }
 
-function page(title, body, wide) {
+function page(title, body, size) {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -62,7 +62,7 @@ function page(title, body, wide) {
            font-weight: 700; border: none; border-radius: 5px; cursor: pointer; }
     .btn:hover { opacity: 0.9; }
     .link-btn { background: none; border: 1px solid #333; color: #999; font-size: 12px;
-                padding: 6px 12px; border-radius: 4px; cursor: pointer; letter-spacing: 0; text-transform: none; }
+                padding: 6px 12px; border-radius: 4px; cursor: pointer; letter-spacing: 0; text-transform: none; white-space: nowrap; }
     .msg { padding: 12px 14px; border-radius: 5px; font-size: 14px; margin-bottom: 24px; }
     .msg.ok { background: #1a7a3c22; border: 1px solid #1a7a3c; color: #6fd394; }
     .msg.err { background: #C41E3A22; border: 1px solid #C41E3A; color: #ff8a9b; }
@@ -74,9 +74,10 @@ function page(title, body, wide) {
     .code { font-size: 22px; letter-spacing: 8px; text-align: center; }
     ol.steps { color: #999; font-size: 13px; line-height: 1.7; margin: 0 0 18px 18px; }
     .card.wide { max-width: 1080px; padding: 32px 36px; }
+    .card.mid { max-width: 680px; }
     .topbar { display: flex; align-items: center; gap: 18px; }
     .tabs { display: flex; gap: 4px; }
-    .tab { color: #888; font-size: 12px; font-weight: 600; letter-spacing: 1px; text-decoration: none;
+    .tab { white-space: nowrap; color: #888; font-size: 12px; font-weight: 600; letter-spacing: 1px; text-decoration: none;
            padding: 7px 12px; border-radius: 4px; }
     .tab:hover { color: #fff; }
     .tab.on { color: #fff; background: #2a2a2a; }
@@ -123,7 +124,7 @@ function page(title, body, wide) {
     .empty { padding: 48px 16px; text-align: center; color: #777; font-size: 14px; }
     .foot { color: #666; font-size: 12px; margin-top: 12px; }
     @media (max-width: 760px) {
-      .card.wide { padding: 22px 16px; }
+      .card.wide, .card.mid { padding: 22px 16px; }
       .logo { flex-wrap: wrap; gap: 14px; }
       .topbar { width: 100%; justify-content: space-between; }
       .stats { grid-template-columns: repeat(2, 1fr); }
@@ -137,7 +138,7 @@ function page(title, body, wide) {
     }
   </style>
 </head>
-<body><div class="card${wide ? ' wide' : ''}">${body}</div></body>
+<body><div class="card${size ? ' ' + size : ''}">${body}</div></body>
 </html>`;
 }
 
@@ -355,7 +356,7 @@ function requestsPage(rows, { status, q }) {
       <div class="ledger-head"><span>Status</span><span>Organization / Event</span><span>Amount</span><span>Submitted</span><span>Decided by</span><span></span></div>
       ${filtered.length ? filtered.map(ledgerRow).join('') : `<div class="empty">${rows.length ? 'No requests match this filter.' : 'No requests yet. New submissions will appear here.'}</div>`}
     </div>
-    <p class="foot">Showing ${filtered.length} of ${rows.length}. Times are Mountain Time.</p>`, true);
+    <p class="foot">Showing ${filtered.length} of ${rows.length}. Times are Mountain Time.</p>`, 'wide');
 }
 
 function csvCell(v) {
@@ -412,7 +413,7 @@ function settingsPage(settings, message, isError) {
       </div>
 
       <button class="btn" type="submit">Save Changes</button>
-    </form>`);
+    </form>`, 'mid');
 }
 
 function send(res, html, status = 200) {
