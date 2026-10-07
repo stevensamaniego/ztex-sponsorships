@@ -104,6 +104,8 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - Verified with 79 mocked end-to-end checks (login URL/PKCE, callback state/nonce/tenant/aud/issuer/expiry rejection, open-redirect, non-approver 403, spoofed approverName ignored, cookie purpose separation, fail-closed config, admin approver validation, plus the existing request/admin/TOTP tests).
 - Work is on local branch `feature/microsoft-signin`; not pushed or deployed (waiting for the Entra app registration).
 
+- 2026-10-06: deployed (077c652) with Entra app "ZTEX Sponsorships Approvals" (client f9f8b710…), approvers steven/groldan/jroyo/mtarin@ set in Redis; Steven verified sign-in → approve → decision email end to end.
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.
