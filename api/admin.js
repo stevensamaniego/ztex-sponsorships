@@ -310,7 +310,9 @@ function ledgerRow(r) {
               + field('Calendar invite', !r.invite ? '' : r.invite.sent ? `Sent to ${r.invite.to} people` : `<span style="color:#e0435a;">Not sent (${e(r.invite.reason)})</span>`) : ''}
           </dl>
           ${r.bossNotes ? `<h4>Notes from leadership</h4><div class="text">${e(r.bossNotes)}</div>` : ''}
-          ${r.status === 'pending' ? '<p class="foot">Waiting on an approver. They act from the Approve / Deny buttons in the request email.</p>' : ''}
+          ${r.status === 'pending' ? `<p class="foot">Waiting on an approver. They act from the Approve / Deny buttons in the request email. ${r.reminders
+            ? `Reminders sent: ${r.reminders.count} (last ${fmtShortDate(r.reminders.lastAt)}).`
+            : 'Approvers are reminded after 5 days, then every 5 days.'}</p>` : ''}
           ${r.status === 'expired' ? '<p class="foot">No decision was made before the approve/deny links expired (90 days).</p>' : ''}
         </div>
         ${r.description ? `<div class="full"><h4>Description</h4><div class="text">${e(r.description)}</div></div>` : ''}
@@ -438,6 +440,14 @@ function settingsPage(settings, message, isError, last) {
     <p class="foot">${escapeHtml(cleanupNote(last))}</p>`, 'mid');
 }
 
+// Reminder history for pending requests (kept in reminder:<id>, written by api/reminders.js).
+async function attachReminders(rows) {
+  const pending = rows.filter(r => r.status === 'pending');
+  if (!pending.length) return;
+  const values = await redis.mget(...pending.map(r => `reminder:${r.id}`));
+  pending.forEach((r, i) => { if (values[i]) r.reminders = parseStored(values[i]); });
+}
+
 // Streams one of a request's stored attachments. The file must belong to that ledger entry.
 async function downloadFile(res, id, pathname) {
   if (!isValidToken(id) || !isUploadPath(pathname)) return res.status(400).send('Invalid request.');
@@ -474,6 +484,7 @@ module.exports = async (req, res) => {
       const status = STATUS_LABELS[query.status] ? query.status : '';
       const q = typeof query.q === 'string' ? query.q.trim().slice(0, 100) : '';
       const rows = await listRequests(redis);
+      await attachReminders(rows);
       if (query.export === 'csv') {
         const filtered = rows.filter(r => (!status || r.status === status) && matchesQuery(r, q));
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');

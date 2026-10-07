@@ -1,8 +1,8 @@
-const { timingSafeEqual } = require('crypto');
 const { Redis } = require('@upstash/redis');
 const { list, del } = require('@vercel/blob');
 const { INDEX_KEY, ledgerKey } = require('../lib/ledger');
 const { parseStored } = require('../lib/security');
+const { cronAuthorized } = require('../lib/cron');
 
 const redis = Redis.fromEnv();
 
@@ -12,14 +12,6 @@ const redis = Redis.fromEnv();
 // uploads still in progress aren't touched.
 const MIN_AGE_MS = 24 * 60 * 60 * 1000;
 const LAST_RUN_KEY = 'cleanup:last';
-
-function authorized(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const a = Buffer.from(String(req.headers.authorization || ''));
-  const b = Buffer.from(`Bearer ${secret}`);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 
 async function referencedPaths() {
   const tokens = await redis.zrange(INDEX_KEY, 0, -1);
@@ -65,7 +57,7 @@ async function cleanup(now = Date.now()) {
 }
 
 module.exports = async (req, res) => {
-  if (!authorized(req)) return res.status(401).json({ error: 'Unauthorized' });
+  if (!cronAuthorized(req)) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const result = await cleanup();
     console.log('Attachment cleanup:', result);

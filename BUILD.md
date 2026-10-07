@@ -169,6 +169,13 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - With no time, the invite is an all-day Free event (VALUE=DATE, no VTIMEZONE) with its reminder at `-PT18H` (6 AM the day before; `-P1D` on an all-day event would fire at midnight). Timed events are unchanged (1 hour, `-P1D`). The invite body says "(all day)".
 - Verified: calendar unit checks, handler flow (date-only submit → 200 → approve → all-day Free invite), and Playwright (date still blocks, time optional, payload `eventTime: ""`).
 
+### 2026-10-07 — Reminders for pending requests
+- Steven asked for reminders on requests still pending after 5 days and every 5 days after that.
+- `api/reminders.js`, daily Vercel cron `0 15 * * *` (9 AM MDT / 8 AM MST), `CRON_SECRET` auth through the shared `lib/cron.js` (cleanup uses it too). For every ledger entry with status pending whose `pending:` record still exists (the links are live), `due = floor(daysPending / 5)`. If `due` is greater than the count sent so far, it emails the **approvers** list a reminder (days waiting, summary, the same Approve/Deny links) and records `reminder:<id>` = `{ count: due, lastAt, days }` (120-day TTL). This key is kept separate from the ledger so a reminder can never overwrite a decision.
+- Missed runs catch up with a single reminder; a failed send isn't recorded, so the next day retries; decided or expired requests are skipped; no approvers means skipped. At most about 18 reminders before the 90-day link expiry.
+- Admin: pending rows show "Reminders sent: N (last date)" or the reminder policy.
+- Verified with simulated time (days 4/5/6/9/10/10 rerun/22/24/25 failure/26 retry, decided/expired skipped, admin display, no approvers, 401s), a visual check of the email, and the earlier suites (tiers 20/20 after adding the now-required event date to the test data, all-day 6/6, invite failure, cleanup auth).
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.
