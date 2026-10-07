@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 const { Redis } = require('@upstash/redis');
 const { SUBMISSION_TTL_SECONDS, newToken, pendingKey, escapeHtml } = require('../lib/security');
 const { getSettings } = require('../lib/settings');
+const { recordSubmission } = require('../lib/ledger');
 
 const redis = Redis.fromEnv();
 
@@ -180,6 +181,7 @@ module.exports = async (req, res) => {
       orgName, contactName, email, phone,
       eventName, eventDate, sponsorshipAmount, sponsorshipTier
     }), { ex: SUBMISSION_TTL_SECONDS });
+    await recordSubmission(redis, token, req.body);
 
     const baseUrl = 'https://sponsorships.ztexconstruction.com';
     const approveUrl = `${baseUrl}/api/action?type=approve&id=${token}`;

@@ -3,6 +3,7 @@ const { Redis } = require('@upstash/redis');
 const { SUBMISSION_TTL_SECONDS, isValidToken, pendingKey, decisionKey, escapeHtml, parseStored } = require('../lib/security');
 
 const { getSettings, isApprover } = require('../lib/settings');
+const { recordDecision } = require('../lib/ledger');
 const { parseCookies, readSession, messagePage, sendPage } = require('../lib/approver');
 const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Title Sponsor', 'In-Kind', 'Other'];
 
@@ -253,6 +254,15 @@ module.exports = async (req, res) => {
     });
 
     await redis.del(pendingKey(id));
+    try {
+      await recordDecision(redis, id, {
+        action: type, approver: session.name, approverEmail: session.email,
+        adjustedAmount, adjustedTier, bossNotes, submission
+      });
+    } catch (err) {
+      // The decision itself is already recorded and emailed; don't fail the approver over the log
+      console.error('Ledger update failed:', err);
+    }
     res.setHeader('Content-Type', 'text/html');
     return res.status(200).send(confirmationPage(approved, submission.orgName));
 

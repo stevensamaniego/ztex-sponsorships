@@ -112,6 +112,16 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 - `api/submit.js`: server-side guard. It returns 400 when orgName/contactName/email/phone/eventName/description is missing or blank, or the email is invalid, before anything is stored or emailed.
 - Verified: stubbed handler tests (partial, empty, missing body, bad email, whitespace give 400 with no email or Redis write; a full request gives 200) and a local Playwright run (Enter on partial step 1/2 stays put with 0 POSTs, Enter on a complete step advances, a blanked step-1 field at submit jumps back, a complete submit gives 1 POST and /thanks).
 
+### 2026-10-07 — Request ledger on /admin
+- `/admin` now opens on a **Requests** tab; settings moved to a **Settings** tab (`/admin?view=settings`). Both sit behind the existing password + TOTP.
+- New `lib/ledger.js`: a permanent record per request at `ledger:{token}` (JSON: submitted fields, attachment file names but not their contents, status, submittedAt, decision, approver, adjusted amount/tier, leadership notes), plus a sorted-set index `ledger` scored by submit time. No TTL; the `pending:` / `submission:` keys still expire after 90 days and only drive the links.
+  - `api/submit.js` writes the entry (status `pending`) after the pending record.
+  - `api/confirm.js` records approved/denied after the marketing email succeeds. This is best-effort: a ledger failure is logged but doesn't fail the decision. Requests that predate the ledger get an entry built from the pending record, with no submit time.
+  - A pending entry older than 90 days displays as `expired`.
+- UI: clickable status counters (Pending, with $ requested; Approved, with $ committed using the adjusted amount when changed; Denied; All), search (org/contact/email/phone/event/approver), expandable rows with full details, an adjusted amount shown next to the struck-through requested one, Mountain Time dates, and a responsive card layout on phones. **Export CSV** follows the current filter and search, with formula-injection protection and a UTF-8 BOM.
+- No backfill: the 16 existing Redis records were all test submissions, so the ledger starts empty.
+- Verified with an in-memory Redis harness running the real handlers: submit ×3 → approve with adjustment, deny, double-decision blocked; filters, search, CSV, XSS escaping, unauthenticated access blocked; legacy (pre-ledger) decision; expiry. Visual check with Playwright at desktop and phone widths.
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.

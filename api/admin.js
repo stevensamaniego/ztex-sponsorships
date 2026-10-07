@@ -7,6 +7,7 @@ const {
   clientIp, isLockedOut, recordFailedLogin, clearFailedLogins
 } = require('../lib/auth');
 const { isEnrolled, beginEnrollment, confirmEnrollment, verifyLoginCode } = require('../lib/mfa');
+const { listRequests } = require('../lib/ledger');
 
 const redis = Redis.fromEnv();
 
@@ -27,7 +28,7 @@ function sameOrigin(req) {
   try { return new URL(origin).host === req.headers.host; } catch { return false; }
 }
 
-function page(title, body) {
+function page(title, body, wide) {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -72,9 +73,71 @@ function page(title, body) {
            letter-spacing: 1px; margin-bottom: 24px; word-break: break-all; }
     .code { font-size: 22px; letter-spacing: 8px; text-align: center; }
     ol.steps { color: #999; font-size: 13px; line-height: 1.7; margin: 0 0 18px 18px; }
+    .card.wide { max-width: 1080px; padding: 32px 36px; }
+    .topbar { display: flex; align-items: center; gap: 18px; }
+    .tabs { display: flex; gap: 4px; }
+    .tab { color: #888; font-size: 12px; font-weight: 600; letter-spacing: 1px; text-decoration: none;
+           padding: 7px 12px; border-radius: 4px; }
+    .tab:hover { color: #fff; }
+    .tab.on { color: #fff; background: #2a2a2a; }
+    .tab .count { background: #D4AF37; color: #111; border-radius: 100px; padding: 1px 7px; margin-left: 6px; font-size: 11px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+    .stat { display: block; text-decoration: none; background: #141414; border: 1px solid #2a2a2a;
+            border-radius: 8px; padding: 16px 18px; border-top: 3px solid var(--c); }
+    .stat:hover, .stat.on { border-color: var(--c); }
+    .stat .n { font-size: 28px; font-weight: 700; color: #fff; }
+    .stat .l { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #888; margin-top: 2px; }
+    .stat .s { font-size: 12px; color: #aaa; margin-top: 6px; }
+    .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+    .toolbar form { flex: 1; min-width: 220px; display: flex; gap: 8px; }
+    .toolbar input { padding: 8px 12px; font-size: 13px; }
+    .small-btn { white-space: nowrap; background: #222; border: 1px solid #333; color: #ccc; font-size: 12px;
+                 padding: 8px 12px; border-radius: 5px; cursor: pointer; text-decoration: none; font-family: inherit; }
+    .small-btn:hover { color: #fff; border-color: #555; }
+    .pill { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+            padding: 4px 10px; border-radius: 100px; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
+            border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); }
+    .s-pending { --c: #D4AF37; } .s-approved { --c: #3fbf6f; } .s-denied { --c: #e0435a; } .s-expired { --c: #777; } .s-all { --c: #aaa; }
+    .ledger { border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; }
+    .ledger-head, .ledger summary { display: grid; grid-template-columns: 104px minmax(0,2.2fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1.3fr) 14px;
+            gap: 14px; align-items: center; padding: 12px 16px; }
+    .ledger-head { background: #141414; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #777; font-weight: 700; }
+    .ledger details { border-top: 1px solid #242424; }
+    .ledger summary { cursor: pointer; list-style: none; font-size: 13px; }
+    .ledger summary::-webkit-details-marker { display: none; }
+    .ledger summary:hover { background: #202020; }
+    .ledger details[open] summary { background: #202020; }
+    .ledger summary::after { content: '›'; color: #666; font-size: 18px; transition: transform .15s; }
+    .ledger details[open] summary::after { transform: rotate(90deg); }
+    .org { color: #fff; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sub { color: #888; font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .amt { color: #fff; font-weight: 600; }
+    .amt .was { color: #777; font-weight: 400; font-size: 11px; text-decoration: line-through; margin-left: 4px; }
+    .detail { padding: 6px 16px 20px 134px; background: #181818; display: grid; grid-template-columns: 1fr 1fr; gap: 18px 32px; }
+    .detail h4 { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #C41E3A; margin: 14px 0 8px; }
+    .detail dl { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; font-size: 13px; }
+    .detail dt { color: #777; } .detail dd { color: #ddd; overflow-wrap: anywhere; }
+    .detail dd a { color: #e0435a; }
+    .detail .full { grid-column: 1 / -1; }
+    .detail .text { font-size: 13px; color: #ccc; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .empty { padding: 48px 16px; text-align: center; color: #777; font-size: 14px; }
+    .foot { color: #666; font-size: 12px; margin-top: 12px; }
+    @media (max-width: 760px) {
+      .card.wide { padding: 22px 16px; }
+      .logo { flex-wrap: wrap; gap: 14px; }
+      .topbar { width: 100%; justify-content: space-between; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .ledger-head { display: none; }
+      .ledger summary { grid-template-columns: 1fr auto; gap: 6px 12px; }
+      .ledger summary > .c-org { grid-column: 1 / -1; order: -1; }
+      .ledger summary > .c-date, .ledger summary > .c-by { display: none; }
+      .ledger summary::after { display: none; }
+      .detail { padding: 6px 16px 18px; grid-template-columns: 1fr; }
+      .detail dl { grid-template-columns: 100px 1fr; }
+    }
   </style>
 </head>
-<body><div class="card">${body}</div></body>
+<body><div class="card${wide ? ' wide' : ''}">${body}</div></body>
 </html>`;
 }
 
@@ -82,7 +145,7 @@ function loginPage(error) {
   return page('Admin Login', `
     <div class="logo"><div>ZTEX <span>Construction</span></div></div>
     <h1>Sponsorship Admin</h1>
-    <p class="subtitle">Sign in to manage approvers and notification emails.</p>
+    <p class="subtitle">Sign in to review requests and manage settings.</p>
     ${error ? `<div class="msg err">${escapeHtml(error)}</div>` : ''}
     <form method="POST" action="/admin">
       <input type="hidden" name="action" value="login">
@@ -136,13 +199,193 @@ async function mfaPage(error) {
   return mfaEnrollPage(await beginEnrollment(redis, process.env.ADMIN_USERNAME), error);
 }
 
+function topbar(active, pendingCount) {
+  const tab = (key, label, extra = '') =>
+    `<a class="tab${active === key ? ' on' : ''}" href="/admin${key === 'requests' ? '' : '?view=' + key}">${label}${extra}</a>`;
+  return `
+    <div class="logo"><div>ZTEX <span>Construction</span></div>
+      <div class="topbar">
+        <nav class="tabs">
+          ${tab('requests', 'REQUESTS', pendingCount ? `<span class="count">${pendingCount}</span>` : '')}
+          ${tab('settings', 'SETTINGS')}
+        </nav>
+        <form method="POST" action="/admin"><input type="hidden" name="action" value="logout">
+          <button class="link-btn" type="submit">Sign out</button></form>
+      </div>
+    </div>`;
+}
+
+const STATUS_LABELS = { pending: 'Pending', approved: 'Approved', denied: 'Denied', expired: 'Expired' };
+const TZ = 'America/Denver';
+
+function parseMoney(v) {
+  const n = parseFloat(String(v || '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function money(n) {
+  return n === null ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function fmtDateTime(ms) {
+  if (!ms) return '—';
+  return new Date(ms).toLocaleString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function fmtShortDate(ms) {
+  if (!ms) return '—';
+  return new Date(ms).toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function fmtEventDate(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  return isNaN(d) ? String(v) : d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Requested vs. final amount; approved requests may have been adjusted by the approver.
+function amounts(r) {
+  const requested = parseMoney(r.sponsorshipAmount);
+  const adjusted = parseMoney(r.adjustedAmount);
+  const final = r.status === 'approved' ? (adjusted ?? requested) : requested;
+  return { requested, final, changed: r.status === 'approved' && adjusted !== null && adjusted !== requested };
+}
+
+function matchesQuery(r, q) {
+  if (!q) return true;
+  const hay = [r.orgName, r.contactName, r.email, r.phone, r.eventName, r.approver, r.approverEmail]
+    .filter(Boolean).join(' ').toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every(term => hay.includes(term));
+}
+
+function ledgerRow(r) {
+  const { requested, final, changed } = amounts(r);
+  const tier = r.status === 'approved' && r.adjustedTier ? r.adjustedTier : r.sponsorshipTier;
+  const field = (label, value) => `<dt>${label}</dt><dd>${value || '—'}</dd>`;
+  const e = escapeHtml;
+  return `
+    <details>
+      <summary>
+        <span><span class="pill s-${r.status}">${STATUS_LABELS[r.status] || e(r.status)}</span></span>
+        <span class="c-org"><div class="org">${e(r.orgName) || '(no name)'}</div><div class="sub">${e(r.eventName) || '—'}</div></span>
+        <span class="amt">${money(final)}${changed ? `<span class="was">${money(requested)}</span>` : ''}</span>
+        <span class="c-date"><div>${fmtShortDate(r.submittedAt)}</div><div class="sub">Event ${fmtEventDate(r.eventDate)}</div></span>
+        <span class="c-by"><div>${r.approver ? e(r.approver) : '<span class="sub">—</span>'}</div>${r.decidedAt ? `<div class="sub">${fmtShortDate(r.decidedAt)}</div>` : ''}</span>
+      </summary>
+      <div class="detail">
+        <div>
+          <h4>Contact</h4>
+          <dl>
+            ${field('Organization', e(r.orgName))}
+            ${field('Contact', e(r.contactName))}
+            ${field('Email', r.email ? `<a href="mailto:${e(r.email)}">${e(r.email)}</a>` : '')}
+            ${field('Phone', r.phone ? `<a href="tel:${e(String(r.phone).replace(/[^0-9+]/g, ''))}">${e(r.phone)}</a>` : '')}
+          </dl>
+          <h4>Request</h4>
+          <dl>
+            ${field('Event', e(r.eventName))}
+            ${field('Event date', fmtEventDate(r.eventDate))}
+            ${field('Amount', money(requested))}
+            ${field('Tier', e(r.sponsorshipTier))}
+            ${field('Submitted', fmtDateTime(r.submittedAt))}
+            ${field('Attachments', (r.files || []).map(e).join('<br>'))}
+          </dl>
+        </div>
+        <div>
+          <h4>Decision</h4>
+          <dl>
+            ${field('Status', `<span class="pill s-${r.status}">${STATUS_LABELS[r.status] || e(r.status)}</span>`)}
+            ${field('Decided by', r.approver ? `${e(r.approver)}${r.approverEmail ? `<br><span class="sub">${e(r.approverEmail)}</span>` : ''}` : '')}
+            ${field('Decided', fmtDateTime(r.decidedAt))}
+            ${r.status === 'approved' ? field('Approved amount', money(final)) + field('Approved tier', e(tier)) : ''}
+          </dl>
+          ${r.bossNotes ? `<h4>Notes from leadership</h4><div class="text">${e(r.bossNotes)}</div>` : ''}
+          ${r.status === 'pending' ? '<p class="foot">Waiting on an approver. They act from the Approve / Deny buttons in the request email.</p>' : ''}
+          ${r.status === 'expired' ? '<p class="foot">No decision was made before the approve/deny links expired (90 days).</p>' : ''}
+        </div>
+        ${r.description ? `<div class="full"><h4>Description</h4><div class="text">${e(r.description)}</div></div>` : ''}
+        ${r.additionalNotes ? `<div class="full"><h4>Additional notes</h4><div class="text">${e(r.additionalNotes)}</div></div>` : ''}
+      </div>
+    </details>`;
+}
+
+function requestsPage(rows, { status, q }) {
+  const count = s => rows.filter(r => r.status === s).length;
+  const approvedTotal = rows.filter(r => r.status === 'approved')
+    .reduce((sum, r) => sum + (amounts(r).final || 0), 0);
+  const pendingTotal = rows.filter(r => r.status === 'pending')
+    .reduce((sum, r) => sum + (amounts(r).final || 0), 0);
+  const filtered = rows.filter(r => (!status || r.status === status) && matchesQuery(r, q));
+
+  const qs = s => {
+    const p = new URLSearchParams();
+    if (s) p.set('status', s);
+    if (q) p.set('q', q);
+    const str = p.toString();
+    return '/admin' + (str ? '?' + str : '');
+  };
+  const stat = (s, label, sub) => `
+    <a class="stat s-${s || 'all'}${(status || '') === (s || '') ? ' on' : ''}" href="${qs(s)}">
+      <div class="n">${s ? count(s) : rows.length}</div><div class="l">${label}</div>${sub ? `<div class="s">${sub}</div>` : ''}
+    </a>`;
+  const exportParams = new URLSearchParams({ export: 'csv' });
+  if (status) exportParams.set('status', status);
+  if (q) exportParams.set('q', q);
+
+  return page('Requests', `
+    ${topbar('requests', count('pending'))}
+    <h1>Sponsorship Requests</h1>
+    <p class="subtitle">Every request submitted through the portal and what happened to it. Click a row for full details.</p>
+    <div class="stats">
+      ${stat('pending', 'Pending', pendingTotal ? `${money(pendingTotal)} requested` : 'Nothing waiting')}
+      ${stat('approved', 'Approved', `${money(approvedTotal)} committed`)}
+      ${stat('denied', 'Denied')}
+      ${stat('', 'All requests', count('expired') ? `${count('expired')} expired` : '')}
+    </div>
+    <div class="toolbar">
+      <form method="GET" action="/admin">
+        ${status ? `<input type="hidden" name="status" value="${escapeHtml(status)}">` : ''}
+        <input name="q" value="${escapeHtml(q)}" placeholder="Search organization, contact, event, approver…">
+        <button class="small-btn" type="submit">Search</button>
+        ${q ? `<a class="small-btn" href="${status ? '/admin?status=' + status : '/admin'}">Clear</a>` : ''}
+      </form>
+      <a class="small-btn" href="/admin?${exportParams}">Export CSV</a>
+    </div>
+    <div class="ledger">
+      <div class="ledger-head"><span>Status</span><span>Organization / Event</span><span>Amount</span><span>Submitted</span><span>Decided by</span><span></span></div>
+      ${filtered.length ? filtered.map(ledgerRow).join('') : `<div class="empty">${rows.length ? 'No requests match this filter.' : 'No requests yet. New submissions will appear here.'}</div>`}
+    </div>
+    <p class="foot">Showing ${filtered.length} of ${rows.length}. Times are Mountain Time.</p>`, true);
+}
+
+function csvCell(v) {
+  let s = v === undefined || v === null ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // keep spreadsheet apps from running it as a formula
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function requestsCsv(rows) {
+  const cols = [
+    ['Status', r => STATUS_LABELS[r.status] || r.status],
+    ['Submitted', r => r.submittedAt ? new Date(r.submittedAt).toISOString() : ''],
+    ['Organization', r => r.orgName], ['Contact', r => r.contactName], ['Email', r => r.email], ['Phone', r => r.phone],
+    ['Event', r => r.eventName], ['Event Date', r => r.eventDate],
+    ['Requested Amount', r => amounts(r).requested ?? ''], ['Requested Tier', r => r.sponsorshipTier],
+    ['Approved Amount', r => r.status === 'approved' ? amounts(r).final ?? '' : ''],
+    ['Approved Tier', r => r.status === 'approved' ? (r.adjustedTier || r.sponsorshipTier) : ''],
+    ['Decided By', r => r.approver], ['Decided By Email', r => r.approverEmail],
+    ['Decided', r => r.decidedAt ? new Date(r.decidedAt).toISOString() : ''],
+    ['Leadership Notes', r => r.bossNotes], ['Description', r => r.description],
+    ['Additional Notes', r => r.additionalNotes], ['Attachments', r => (r.files || []).join('; ')]
+  ];
+  return [cols.map(c => c[0]), ...rows.map(r => cols.map(c => c[1](r)))]
+    .map(line => line.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
 function settingsPage(settings, message, isError) {
   const lines = list => escapeHtml(list.join('\n'));
   return page('Admin', `
-    <div class="logo"><div>ZTEX <span>Construction</span></div>
-      <form method="POST" action="/admin"><input type="hidden" name="action" value="logout">
-        <button class="link-btn" type="submit">Sign out</button></form>
-    </div>
+    ${topbar('settings')}
     <h1>Sponsorship Settings</h1>
     <p class="subtitle">Changes apply to new requests and decisions immediately.</p>
     ${message ? `<div class="msg ${isError ? 'err' : 'ok'}">${escapeHtml(message)}</div>` : ''}
@@ -184,7 +427,21 @@ module.exports = async (req, res) => {
   const authed = isAuthenticated(cookies);
 
   if (req.method === 'GET') {
-    if (authed) return send(res, settingsPage(await getSettings(redis)));
+    if (authed) {
+      const query = req.query || {};
+      if (query.view === 'settings') return send(res, settingsPage(await getSettings(redis)));
+      const status = STATUS_LABELS[query.status] ? query.status : '';
+      const q = typeof query.q === 'string' ? query.q.trim().slice(0, 100) : '';
+      const rows = await listRequests(redis);
+      if (query.export === 'csv') {
+        const filtered = rows.filter(r => (!status || r.status === status) && matchesQuery(r, q));
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="sponsorship-requests-${new Date().toISOString().slice(0, 10)}.csv"`);
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).send('﻿' + requestsCsv(filtered));
+      }
+      return send(res, requestsPage(rows, { status, q }));
+    }
     if (isMfaPending(cookies)) return send(res, await mfaPage());
     return send(res, loginPage());
   }
