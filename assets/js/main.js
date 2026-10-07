@@ -499,6 +499,7 @@ form.addEventListener('submit', async (e) => {
         phone: document.getElementById('phone').value.trim(),
         eventName: document.getElementById('eventName').value.trim(),
         eventDate: document.getElementById('eventDate').value,
+        eventTime: document.getElementById('eventTime').value,
         sponsorshipAmount: document.getElementById('sponsorshipAmount').value.trim(),
         sponsorshipTier: tierSelect.value,
         sponsorshipTierOther: tierOtherInput.value.trim(),

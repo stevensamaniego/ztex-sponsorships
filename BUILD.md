@@ -155,6 +155,15 @@ Names only; values live in Vercel → Project → Environment Variables (local c
 ### 2026-10-07 — Marketing email: drop the documents section
 - At Steven's request, removed the "Submitter's Documents" list from the approved/denied marketing email body; the files are still attached. A one-line red note appears only if the attachments couldn't be loaded. Verified both cases with a stubbed handler test.
 
+### 2026-10-07 — Calendar invite on approval; event date + start time required
+- Steven's spec: Event Date and Start Time are required; every invite is 1 hour, shown as Free, with a 1-day reminder; approved requests only.
+- Form: Event Name is now full width; Event Date is required; new required `eventTime` (`<input type="time">`, labelled Mountain Time).
+- New `lib/calendar.js`: `parseEventWhen` (server validation: real date in 2000–2100, HH:MM time), `formatEventWhen` ("Saturday, November 14, 2026 at 6:00 PM", built from the parts with no time zone shifts), and `buildInvite` (RFC 5545 METHOD:REQUEST, America/Denver VTIMEZONE, DTEND = start + 60 min, TRANSP:TRANSPARENT + X-MICROSOFT-CDO-BUSYSTATUS:FREE, attendees OPT-PARTICIPANT with RSVP=FALSE, VALARM -P1D, escaping and UTF-8-safe 75-octet folding; all-day fallback when there's no time, null when there's no date).
+- `/api/submit` validates date/time, stores `eventTime` (plus description/notes now also in the pending record), and the leadership email shows "Event Date & Time".
+- `/api/confirm` (approve only): after the marketing email, sends a second email to approvers ∪ marketing (lowercased, deduped) using nodemailer `icalEvent`, with an HTML/text body of the details (approved amount/tier after adjustment, description, submitter notes, leadership notes, approver) and the same attachments. This is best-effort: a failure is logged and recorded as `invite: { sent:false, reason }` without failing the decision. On success the ledger records `invite: { sent:true, to:n }`.
+- The approval page summary shows the event date and time; admin details show the date and time and "Calendar invite: Sent to N people / Not sent"; the CSV adds Event Time.
+- Verified: calendar unit checks (validation, formatting, midnight/year rollover, Free, reminder, folding/escaping, all-day fallback); handler flow (400 on missing date or time, leadership email/approval page show the time, approve → marketing email + invite to 3 deduped recipients with the attachment and 6–7 PM Mountain, deny → no invite, SMTP failure on the invite → approval still succeeds and the ledger shows not sent); Playwright form check. A real invite was sent to steven@ only for Outlook verification.
+
 ## Current status & next steps
 - Status: production, live at sponsorships.ztexconstruction.com. Last code change 2026-06-25.
 - No open TODOs in code and no next steps recorded.

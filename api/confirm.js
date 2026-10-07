@@ -6,6 +6,8 @@ const { getSettings, isApprover } = require('../lib/settings');
 const { recordDecision } = require('../lib/ledger');
 const { parseTier, tierLabel } = require('../lib/tiers');
 const { loadAttachments } = require('../lib/files');
+const { buildInvite, formatEventWhen } = require('../lib/calendar');
+const { ledgerKey } = require('../lib/ledger');
 const { parseCookies, readSession, messagePage, sendPage } = require('../lib/approver');
 
 const redis = Redis.fromEnv();
@@ -44,7 +46,7 @@ function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjuste
   const finalTier = adjustedTier || sponsorshipTier;
   const displayAmount = finalAmount ? '$' + finalAmount : 'Not specified';
   const originalAmount = stripDollar(escapeHtml(sponsorshipAmount));
-  const date = eventDate ? escapeHtml(new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })) : 'Not specified';
+  const date = escapeHtml(formatEventWhen(eventDate, submission.eventTime)) || 'Not specified';
   const statusColor = approved ? '#1a7a3c' : '#C41E3A';
   const statusLabel = approved ? '✅ APPROVED' : '❌ DENIED';
   const statusMessage = approved
@@ -103,7 +105,7 @@ function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjuste
                 <td style="padding:10px 14px;font-size:14px;color:#222;border-bottom:1px solid #f0f0f0;">${eventName}</td>
               </tr>
               <tr>
-                <td style="padding:10px 14px;font-size:13px;color:#888;border-bottom:1px solid #f0f0f0;">Event Date</td>
+                <td style="padding:10px 14px;font-size:13px;color:#888;border-bottom:1px solid #f0f0f0;">Event Date &amp; Time</td>
                 <td style="padding:10px 14px;font-size:14px;color:#222;border-bottom:1px solid #f0f0f0;">${date}</td>
               </tr>
               ${approved ? `
@@ -151,6 +153,81 @@ function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjuste
   </table>
 </body>
 </html>`;
+}
+
+function formatMoney(value) {
+  const n = parseFloat(String(value || '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '';
+}
+
+function oneLine(value) {
+  return String(value || '').replace(/[\r\n]+/g, ' ').trim();
+}
+
+// Plain-text details for the calendar entry, plus a matching HTML email body.
+function inviteContent(d, approvedAmount, approvedTier, bossNotes, approver) {
+  const rows = [
+    ['Organization', d.orgName],
+    ['Contact', d.contactName],
+    ['Email', d.email],
+    ['Phone', d.phone],
+    ['Event', d.eventName],
+    ['When', `${formatEventWhen(d.eventDate, d.eventTime)}${d.eventTime ? ' (Mountain Time)' : ''}`],
+    ['Approved amount', formatMoney(approvedAmount) || 'Not specified'],
+    ['Approved tier', approvedTier || 'Not specified'],
+    ['Approved by', approver ? `${approver.name} (${approver.email})` : '']
+  ].filter(([, v]) => v);
+  const sections = [
+    ['Description', d.description],
+    ['Submitter notes', d.additionalNotes],
+    ['Notes from leadership', bossNotes]
+  ].filter(([, v]) => v);
+
+  const text = [
+    'Approved ZTEX sponsorship',
+    '',
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    ...sections.flatMap(([k, v]) => ['', `${k}:`, String(v)]),
+    ...((d.files || []).length ? ['', `Attachments: ${d.files.map(f => f.name || f).join(', ')}`] : [])
+  ].join('\n');
+
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:16px;font-family:'Helvetica Neue',Arial,sans-serif;color:#222;">
+  <p style="margin:0 0 12px;font-size:15px;"><strong>Approved ZTEX sponsorship</strong> — added to your calendar as Free time, with a reminder 1 day before.</p>
+  <table cellpadding="0" cellspacing="0" style="font-size:14px;border-collapse:collapse;">
+    ${rows.map(([k, v]) => `<tr><td style="padding:4px 16px 4px 0;color:#888;vertical-align:top;">${escapeHtml(k)}</td><td style="padding:4px 0;">${escapeHtml(v)}</td></tr>`).join('')}
+  </table>
+  ${sections.map(([k, v]) => `<p style="margin:16px 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#C41E3A;">${escapeHtml(k)}</p><p style="margin:0;font-size:14px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(v)}</p>`).join('')}
+</body></html>`;
+  return { text, html };
+}
+
+// Calendar invite for approved requests, to every approver and marketing member.
+async function sendInvite(transporter, { id, details, settings, adjustedAmount, approvedTier, bossNotes, approver, attachments }) {
+  const attendees = [...new Set([...settings.approvers, ...settings.marketingEmails].map(e => String(e).toLowerCase()))];
+  if (!attendees.length) return { sent: false, reason: 'no recipients' };
+  const summary = `Sponsorship: ${oneLine(details.eventName)} — ${oneLine(details.orgName)}`;
+  const approvedAmount = adjustedAmount || details.sponsorshipAmount;
+  const { text, html } = inviteContent(details, approvedAmount, approvedTier, bossNotes, approver);
+  const ics = buildInvite({
+    uid: `${id}@sponsorships.ztexconstruction.com`,
+    summary,
+    description: text,
+    date: details.eventDate,
+    time: details.eventTime,
+    organizer: 'sponsorships@ztexconstruction.com',
+    attendees
+  });
+  if (!ics) return { sent: false, reason: 'no event date' };
+  await transporter.sendMail({
+    from: '"ZTEX Sponsorships" <sponsorships@ztexconstruction.com>',
+    to: attendees.join(', '),
+    subject: summary,
+    text,
+    html,
+    icalEvent: { method: 'REQUEST', filename: 'invite.ics', content: ics },
+    attachments
+  });
+  return { sent: true, to: attendees.length };
 }
 
 function confirmationPage(approved, rawOrgName) {
@@ -272,10 +349,27 @@ module.exports = async (req, res) => {
     });
 
     await redis.del(pendingKey(id));
+
+    // The decision is final once marketing is emailed; an invite failure is logged, not shown as an error
+    let invite = null;
+    if (approved) {
+      try {
+        const ledgerEntry = await redis.get(ledgerKey(id));
+        const details = { ...(ledgerEntry ? parseStored(ledgerEntry) : {}), ...submission };
+        invite = await sendInvite(transporter, {
+          id, details, settings, adjustedAmount, bossNotes, approver: session, attachments,
+          approvedTier: tierLabel(adjustedTier, adjustedTierOther) || tierLabel(details.sponsorshipTier, details.sponsorshipTierOther)
+        });
+      } catch (err) {
+        console.error('Calendar invite failed:', err);
+        invite = { sent: false, reason: 'error' };
+      }
+    }
+
     try {
       await recordDecision(redis, id, {
         action: type, approver: session.name, approverEmail: session.email,
-        adjustedAmount, adjustedTier, adjustedTierOther, bossNotes, submission
+        adjustedAmount, adjustedTier, adjustedTierOther, bossNotes, submission, invite
       });
     } catch (err) {
       // The decision itself is already recorded and emailed; don't fail the approver over the log

@@ -13,6 +13,7 @@ const { listRequests, ledgerKey } = require('../lib/ledger');
 const { isUploadPath } = require('../lib/files');
 const { isValidToken, parseStored } = require('../lib/security');
 const { tierLabel } = require('../lib/tiers');
+const { formatEventWhen } = require('../lib/calendar');
 
 const redis = Redis.fromEnv();
 
@@ -290,7 +291,7 @@ function ledgerRow(r) {
           <h4>Request</h4>
           <dl>
             ${field('Event', e(r.eventName))}
-            ${field('Event date', fmtEventDate(r.eventDate))}
+            ${field('Event date', e(formatEventWhen(r.eventDate, r.eventTime, { weekday: false })) || '—')}
             ${field('Amount', money(requested))}
             ${field('Tier', e(tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)))}
             ${field('Submitted', fmtDateTime(r.submittedAt))}
@@ -305,7 +306,8 @@ function ledgerRow(r) {
             ${field('Status', `<span class="pill s-${r.status}">${STATUS_LABELS[r.status] || e(r.status)}</span>`)}
             ${field('Decided by', r.approver ? `${e(r.approver)}${r.approverEmail ? `<br><span class="sub">${e(r.approverEmail)}</span>` : ''}` : '')}
             ${field('Decided', fmtDateTime(r.decidedAt))}
-            ${r.status === 'approved' ? field('Approved amount', money(final)) + field('Approved tier', e(tier)) : ''}
+            ${r.status === 'approved' ? field('Approved amount', money(final)) + field('Approved tier', e(tier))
+              + field('Calendar invite', !r.invite ? '' : r.invite.sent ? `Sent to ${r.invite.to} people` : `<span style="color:#e0435a;">Not sent (${e(r.invite.reason)})</span>`) : ''}
           </dl>
           ${r.bossNotes ? `<h4>Notes from leadership</h4><div class="text">${e(r.bossNotes)}</div>` : ''}
           ${r.status === 'pending' ? '<p class="foot">Waiting on an approver. They act from the Approve / Deny buttons in the request email.</p>' : ''}
@@ -377,7 +379,7 @@ function requestsCsv(rows) {
     ['Status', r => STATUS_LABELS[r.status] || r.status],
     ['Submitted', r => r.submittedAt ? new Date(r.submittedAt).toISOString() : ''],
     ['Organization', r => r.orgName], ['Contact', r => r.contactName], ['Email', r => r.email], ['Phone', r => r.phone],
-    ['Event', r => r.eventName], ['Event Date', r => r.eventDate],
+    ['Event', r => r.eventName], ['Event Date', r => r.eventDate], ['Event Time', r => r.eventTime],
     ['Requested Amount', r => amounts(r).requested ?? ''], ['Requested Tier', r => tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)],
     ['Approved Amount', r => r.status === 'approved' ? amounts(r).final ?? '' : ''],
     ['Approved Tier', r => r.status !== 'approved' ? '' : r.adjustedTier ? tierLabel(r.adjustedTier, r.adjustedTierOther) : tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)],

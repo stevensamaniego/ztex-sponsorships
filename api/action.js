@@ -4,6 +4,7 @@ const { getSettings, isApprover } = require('../lib/settings');
 const { msConfig, parseCookies, readSession, loginUrl, messagePage, sendPage, notConfiguredPage } = require('../lib/approver');
 
 const { TIERS, OTHER, OTHER_MAX, normalizeTier, tierLabel } = require('../lib/tiers');
+const { formatEventWhen } = require('../lib/calendar');
 
 const redis = Redis.fromEnv();
 
@@ -81,6 +82,7 @@ function reviewForm(type, token, submission, session) {
       <div class="info-item"><label>Contact</label><span>${contactName}</span></div>
       <div class="info-item"><label>Event</label><span>${eventName}</span></div>
       <div class="info-item"><label>Email</label><span>${email}</span></div>
+      <div class="info-item" style="grid-column:1 / -1;"><label>Event Date &amp; Time</label><span>${escapeHtml(formatEventWhen(submission.eventDate, submission.eventTime)) || 'Not specified'}</span></div>
       <div class="info-item"><label>Requested Tier</label><span>${escapeHtml(tierLabel(sponsorshipTier, tierOther)) || 'Not specified'}</span></div>
       <div class="info-item"><label>Requested Amount</label><span>${amount || 'Not specified'}</span></div>
     </div>

@@ -5,6 +5,7 @@ const { getSettings } = require('../lib/settings');
 const { recordSubmission } = require('../lib/ledger');
 const { parseTier, tierLabel } = require('../lib/tiers');
 const { verifyFiles, loadAttachments } = require('../lib/files');
+const { parseEventWhen, formatEventWhen } = require('../lib/calendar');
 
 const redis = Redis.fromEnv();
 
@@ -43,7 +44,7 @@ function buildBossEmail(data, approveUrl, denyUrl) {
 
   const tier = escapeHtml(tierLabel(data.sponsorshipTier, data.sponsorshipTierOther) || 'Not specified');
   const amount = sponsorshipAmount ? `$${escapeHtml(String(sponsorshipAmount).replace(/^\$+/, ''))}` : 'Not specified';
-  const date = eventDate ? escapeHtml(new Date(eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })) : 'Not specified';
+  const date = escapeHtml(formatEventWhen(eventDate, data.eventTime)) || 'Not specified';
 
   return `
 <!DOCTYPE html>
@@ -101,7 +102,7 @@ function buildBossEmail(data, approveUrl, denyUrl) {
                 <td style="padding:10px 14px;font-size:14px;color:#222;font-weight:600;border-bottom:1px solid #f0f0f0;">${eventName}</td>
               </tr>
               <tr>
-                <td style="padding:10px 14px;font-size:13px;color:#888;border-bottom:1px solid #f0f0f0;">Event Date</td>
+                <td style="padding:10px 14px;font-size:13px;color:#888;border-bottom:1px solid #f0f0f0;">Event Date &amp; Time</td>
                 <td style="padding:10px 14px;font-size:14px;color:#222;border-bottom:1px solid #f0f0f0;">${date}</td>
               </tr>
               <tr>
@@ -164,7 +165,7 @@ module.exports = async (req, res) => {
   try {
     const {
       orgName, contactName, email, phone,
-      eventName, eventDate, sponsorshipAmount,
+      eventName, sponsorshipAmount,
       description, additionalNotes, files
     } = req.body || {};
 
@@ -176,6 +177,11 @@ module.exports = async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       return res.status(400).json({ error: 'Invalid email', fields: ['email'] });
     }
+    const when = parseEventWhen(req.body.eventDate, req.body.eventTime);
+    if (when.error) {
+      return res.status(400).json({ error: when.error, fields: [when.field] });
+    }
+    const { eventDate, eventTime } = when;
     const tier = parseTier(req.body.sponsorshipTier, req.body.sponsorshipTierOther);
     if (tier.error) {
       return res.status(400).json({ error: tier.error, fields: ['sponsorshipTier'] });
@@ -186,14 +192,14 @@ module.exports = async (req, res) => {
     if (verified.error) {
       return res.status(400).json({ error: verified.error, fields: ['files'] });
     }
-    const data = { ...req.body, sponsorshipTier, sponsorshipTierOther, files: verified.files };
+    const data = { ...req.body, eventDate, eventTime, sponsorshipTier, sponsorshipTierOther, files: verified.files };
 
     // Store the submission server-side; links carry only an unguessable token
     const token = newToken();
     await redis.set(pendingKey(token), JSON.stringify({
       orgName, contactName, email, phone,
-      eventName, eventDate, sponsorshipAmount, sponsorshipTier, sponsorshipTierOther,
-      files: verified.files
+      eventName, eventDate, eventTime, sponsorshipAmount, sponsorshipTier, sponsorshipTierOther,
+      description, additionalNotes, files: verified.files
     }), { ex: SUBMISSION_TTL_SECONDS });
     await recordSubmission(redis, token, data);
 
