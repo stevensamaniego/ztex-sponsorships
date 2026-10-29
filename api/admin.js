@@ -88,7 +88,7 @@ function page(title, body, size) {
     .tab:hover { color: #fff; }
     .tab.on { color: #fff; background: #2a2a2a; }
     .tab .count { background: #D4AF37; color: #111; border-radius: 100px; padding: 1px 7px; margin-left: 6px; font-size: 11px; }
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+    .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
     .stat { display: block; text-decoration: none; background: #141414; border: 1px solid #2a2a2a;
             border-radius: 8px; padding: 16px 18px; border-top: 3px solid var(--c); }
     .stat:hover, .stat.on { border-color: var(--c); }
@@ -104,7 +104,7 @@ function page(title, body, size) {
     .pill { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
             padding: 4px 10px; border-radius: 100px; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
             border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); }
-    .s-pending { --c: #D4AF37; } .s-approved { --c: #3fbf6f; } .s-denied { --c: #e0435a; } .s-expired { --c: #777; } .s-all { --c: #aaa; }
+    .s-pending { --c: #D4AF37; } .s-approved { --c: #3fbf6f; } .s-completed { --c: #2bbfa0; } .s-denied { --c: #e0435a; } .s-expired { --c: #777; } .s-all { --c: #aaa; }
     .ledger { border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; }
     .ledger-head, .ledger summary { display: grid; grid-template-columns: 104px minmax(0,2.2fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1.3fr) 14px;
             gap: 14px; align-items: center; padding: 12px 16px; }
@@ -134,6 +134,7 @@ function page(title, body, size) {
       .logo { flex-wrap: wrap; gap: 14px; }
       .topbar { width: 100%; justify-content: space-between; }
       .stats { grid-template-columns: repeat(2, 1fr); }
+      .stats .s-all { grid-column: 1 / -1; }
       .ledger-head { display: none; }
       .ledger summary { grid-template-columns: 1fr auto; gap: 6px 12px; }
       .ledger summary > .c-org { grid-column: 1 / -1; order: -1; }
@@ -222,7 +223,10 @@ function topbar(active, pendingCount) {
     </div>`;
 }
 
-const STATUS_LABELS = { pending: 'Pending', approved: 'Approved', denied: 'Denied', expired: 'Expired' };
+const STATUS_LABELS = { pending: 'Pending', approved: 'Approved', completed: 'Completed', denied: 'Denied', expired: 'Expired' };
+
+// Approved requests keep their approval details after marketing marks them completed.
+const wasApproved = r => r.status === 'approved' || r.status === 'completed';
 const TZ = 'America/Denver';
 
 function parseMoney(v) {
@@ -254,20 +258,20 @@ function fmtEventDate(v) {
 function amounts(r) {
   const requested = parseMoney(r.sponsorshipAmount);
   const adjusted = parseMoney(r.adjustedAmount);
-  const final = r.status === 'approved' ? (adjusted ?? requested) : requested;
-  return { requested, final, changed: r.status === 'approved' && adjusted !== null && adjusted !== requested };
+  const final = wasApproved(r) ? (adjusted ?? requested) : requested;
+  return { requested, final, changed: wasApproved(r) && adjusted !== null && adjusted !== requested };
 }
 
 function matchesQuery(r, q) {
   if (!q) return true;
-  const hay = [r.orgName, r.contactName, r.email, r.phone, r.eventName, r.approver, r.approverEmail]
+  const hay = [r.orgName, r.contactName, r.email, r.phone, r.eventName, r.approver, r.approverEmail, r.completedBy, r.completedByEmail]
     .filter(Boolean).join(' ').toLowerCase();
   return q.toLowerCase().split(/\s+/).filter(Boolean).every(term => hay.includes(term));
 }
 
 function ledgerRow(r) {
   const { requested, final, changed } = amounts(r);
-  const tier = r.status === 'approved' && r.adjustedTier ? tierLabel(r.adjustedTier, r.adjustedTierOther) : tierLabel(r.sponsorshipTier, r.sponsorshipTierOther);
+  const tier = wasApproved(r) && r.adjustedTier ? tierLabel(r.adjustedTier, r.adjustedTierOther) : tierLabel(r.sponsorshipTier, r.sponsorshipTierOther);
   const field = (label, value) => `<dt>${label}</dt><dd>${value || '—'}</dd>`;
   const e = escapeHtml;
   return `
@@ -306,10 +310,17 @@ function ledgerRow(r) {
             ${field('Status', `<span class="pill s-${r.status}">${STATUS_LABELS[r.status] || e(r.status)}</span>`)}
             ${field('Decided by', r.approver ? `${e(r.approver)}${r.approverEmail ? `<br><span class="sub">${e(r.approverEmail)}</span>` : ''}` : '')}
             ${field('Decided', fmtDateTime(r.decidedAt))}
-            ${r.status === 'approved' ? field('Approved amount', money(final)) + field('Approved tier', e(tier))
+            ${wasApproved(r) ? field('Approved amount', money(final)) + field('Approved tier', e(tier))
               + field('Calendar invite', !r.invite ? '' : r.invite.sent ? `Sent to ${r.invite.to} people` : `<span style="color:#e0435a;">Not sent (${e(r.invite.reason)})</span>`) : ''}
           </dl>
           ${r.bossNotes ? `<h4>Notes from leadership</h4><div class="text">${e(r.bossNotes)}</div>` : ''}
+          ${r.status === 'completed' ? `<h4>Completion</h4>
+          <dl>
+            ${field('Completed by', r.completedBy ? `${e(r.completedBy)}${r.completedByEmail ? `<br><span class="sub">${e(r.completedByEmail)}</span>` : ''}` : '')}
+            ${field('Completed', fmtDateTime(r.completedAt))}
+          </dl>
+          ${r.completionNotes ? `<h4>Completion notes</h4><div class="text">${e(r.completionNotes)}</div>` : ''}` : ''}
+          ${r.status === 'approved' ? '<p class="foot">Waiting on marketing to process the sponsorship and click "Mark as Completed" in the approval email.</p>' : ''}
           ${r.status === 'pending' ? `<p class="foot">Waiting on an approver. They act from the Approve / Deny buttons in the request email. ${r.reminders
             ? `Reminders sent: ${r.reminders.count} (last ${fmtShortDate(r.reminders.lastAt)}).`
             : 'Approvers are reminded after 5 days, then every 5 days.'}</p>` : ''}
@@ -324,6 +335,8 @@ function ledgerRow(r) {
 function requestsPage(rows, { status, q }) {
   const count = s => rows.filter(r => r.status === s).length;
   const approvedTotal = rows.filter(r => r.status === 'approved')
+    .reduce((sum, r) => sum + (amounts(r).final || 0), 0);
+  const completedTotal = rows.filter(r => r.status === 'completed')
     .reduce((sum, r) => sum + (amounts(r).final || 0), 0);
   const pendingTotal = rows.filter(r => r.status === 'pending')
     .reduce((sum, r) => sum + (amounts(r).final || 0), 0);
@@ -351,6 +364,7 @@ function requestsPage(rows, { status, q }) {
     <div class="stats">
       ${stat('pending', 'Pending', pendingTotal ? `${money(pendingTotal)} requested` : 'Nothing waiting')}
       ${stat('approved', 'Approved', `${money(approvedTotal)} committed`)}
+      ${stat('completed', 'Completed', `${money(completedTotal)} delivered`)}
       ${stat('denied', 'Denied')}
       ${stat('', 'All requests', count('expired') ? `${count('expired')} expired` : '')}
     </div>
@@ -383,11 +397,14 @@ function requestsCsv(rows) {
     ['Organization', r => r.orgName], ['Contact', r => r.contactName], ['Email', r => r.email], ['Phone', r => r.phone],
     ['Event', r => r.eventName], ['Event Date', r => r.eventDate], ['Event Time', r => r.eventTime],
     ['Requested Amount', r => amounts(r).requested ?? ''], ['Requested Tier', r => tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)],
-    ['Approved Amount', r => r.status === 'approved' ? amounts(r).final ?? '' : ''],
-    ['Approved Tier', r => r.status !== 'approved' ? '' : r.adjustedTier ? tierLabel(r.adjustedTier, r.adjustedTierOther) : tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)],
+    ['Approved Amount', r => wasApproved(r) ? amounts(r).final ?? '' : ''],
+    ['Approved Tier', r => !wasApproved(r) ? '' : r.adjustedTier ? tierLabel(r.adjustedTier, r.adjustedTierOther) : tierLabel(r.sponsorshipTier, r.sponsorshipTierOther)],
     ['Decided By', r => r.approver], ['Decided By Email', r => r.approverEmail],
     ['Decided', r => r.decidedAt ? new Date(r.decidedAt).toISOString() : ''],
-    ['Leadership Notes', r => r.bossNotes], ['Description', r => r.description],
+    ['Leadership Notes', r => r.bossNotes],
+    ['Completed By', r => r.completedBy], ['Completed By Email', r => r.completedByEmail],
+    ['Completed', r => r.completedAt ? new Date(r.completedAt).toISOString() : ''],
+    ['Completion Notes', r => r.completionNotes], ['Description', r => r.description],
     ['Additional Notes', r => r.additionalNotes], ['Attachments', r => (r.files || []).map(f => (f && f.name) || f).join('; ')]
   ];
   return [cols.map(c => c[0]), ...rows.map(r => cols.map(c => c[1](r)))]

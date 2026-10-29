@@ -44,6 +44,10 @@
       "dest": "/api/confirm.js"
     },
     {
+      "src": "/api/complete",
+      "dest": "/api/complete.js"
+    },
+    {
       "src": "/api/auth/login",
       "dest": "/api/auth-login.js"
     },

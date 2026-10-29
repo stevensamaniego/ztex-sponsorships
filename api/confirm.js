@@ -16,7 +16,9 @@ function stripDollar(val) {
   return val ? String(val).replace(/^\$+/, '') : '';
 }
 
-function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTierLabel, rawBossNotes, approver, attachmentsMissing) {
+const BASE_URL = 'https://sponsorships.ztexconstruction.com';
+
+function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjustedTierLabel, rawBossNotes, approver, attachmentsMissing, completeUrl) {
   const orgName = escapeHtml(submission.orgName);
   const contactName = escapeHtml(submission.contactName);
   const email = escapeHtml(submission.email);
@@ -125,6 +127,14 @@ function buildMarketingEmail(submission, approved, rawAdjustedAmount, rawAdjuste
             <p style="margin:24px 0 0;font-size:13px;color:#aaa;border-top:1px solid #f0f0f0;padding-top:16px;">
               Decision made by: <strong style="color:#444;">${approverName}</strong>
             </p>` : ''}
+
+            ${approved && completeUrl ? `
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;">
+              <tr><td style="padding:24px 20px;background:#f8f8f8;border-radius:6px;text-align:center;">
+                <a href="${completeUrl}" style="display:inline-block;padding:14px 36px;background:#1a7a3c;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:4px;">🏁 Mark as Completed</a>
+                <p style="margin:14px 0 0;font-size:12px;color:#777;line-height:1.5;">Click once the sponsorship has been processed to record completion notes and notify leadership.</p>
+              </td></tr>
+            </table>` : ''}
 
           </td>
         </tr>
@@ -331,7 +341,8 @@ module.exports = async (req, res) => {
       subject: approved
         ? `✅ Sponsorship Approved — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`
         : `❌ Sponsorship Denied — ${String(submission.orgName || '').replace(/[\r\n]+/g, ' ')}`,
-      html: buildMarketingEmail(submission, approved, adjustedAmount, tierLabel(adjustedTier, adjustedTierOther), bossNotes, session, attachmentsMissing),
+      html: buildMarketingEmail(submission, approved, adjustedAmount, tierLabel(adjustedTier, adjustedTierOther), bossNotes, session, attachmentsMissing,
+        approved ? `${BASE_URL}/api/complete?id=${id}` : ''),
       attachments
     });
 
