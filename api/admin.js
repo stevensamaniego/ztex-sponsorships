@@ -14,6 +14,7 @@ const { isUploadPath } = require('../lib/files');
 const { isValidToken, parseStored } = require('../lib/security');
 const { tierLabel } = require('../lib/tiers');
 const { formatEventWhen } = require('../lib/calendar');
+const { reminderKey, completionReminderKey } = require('./reminders');
 
 const redis = Redis.fromEnv();
 
@@ -254,6 +255,11 @@ function fmtEventDate(v) {
   return isNaN(d) ? String(v) : d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// Reminder records are { stage, sentAt, days }; ones written before 2026-10-29 are { count, lastAt, days }.
+function reminderSentAt(state) {
+  return state.sentAt || state.lastAt;
+}
+
 // Requested vs. final amount; approved requests may have been adjusted by the approver.
 function amounts(r) {
   const requested = parseMoney(r.sponsorshipAmount);
@@ -320,10 +326,12 @@ function ledgerRow(r) {
             ${field('Completed', fmtDateTime(r.completedAt))}
           </dl>
           ${r.completionNotes ? `<h4>Completion notes</h4><div class="text">${e(r.completionNotes)}</div>` : ''}` : ''}
-          ${r.status === 'approved' ? '<p class="foot">Waiting on marketing to process the sponsorship and click "Mark as Completed" in the approval email.</p>' : ''}
+          ${r.status === 'approved' ? `<p class="foot">Waiting on marketing to process the sponsorship and click "Mark as Completed" in the approval email. ${r.reminders
+            ? `Completion reminder sent to marketing ${fmtShortDate(reminderSentAt(r.reminders))}.`
+            : 'Reminder goes to marketing after 3 business days.'}</p>` : ''}
           ${r.status === 'pending' ? `<p class="foot">Waiting on an approver. They act from the Approve / Deny buttons in the request email. ${r.reminders
-            ? `Reminders sent: ${r.reminders.count} (last ${fmtShortDate(r.reminders.lastAt)}).`
-            : 'Approvers are reminded after 5 days, then every 5 days.'}</p>` : ''}
+            ? `Reminder sent ${fmtShortDate(reminderSentAt(r.reminders))}.`
+            : 'Reminder goes to approvers after 3 business days.'}</p>` : ''}
           ${r.status === 'expired' ? '<p class="foot">No decision was made before the approve/deny links expired (90 days).</p>' : ''}
         </div>
         ${r.description ? `<div class="full"><h4>Description</h4><div class="text">${e(r.description)}</div></div>` : ''}
@@ -459,12 +467,13 @@ function settingsPage(settings, message, isError, last) {
     <p class="foot">${escapeHtml(cleanupNote(last))}</p>`, 'mid');
 }
 
-// Reminder history for pending requests (kept in reminder:<id>, written by api/reminders.js).
+// Reminder state written by api/reminders.js: pending rows read reminder:<id> (to the approvers),
+// approved rows read reminder:completion:<id> (to marketing).
 async function attachReminders(rows) {
-  const pending = rows.filter(r => r.status === 'pending');
-  if (!pending.length) return;
-  const values = await redis.mget(...pending.map(r => `reminder:${r.id}`));
-  pending.forEach((r, i) => { if (values[i]) r.reminders = parseStored(values[i]); });
+  const open = rows.filter(r => r.status === 'pending' || r.status === 'approved');
+  if (!open.length) return;
+  const values = await redis.mget(...open.map(r => r.status === 'pending' ? reminderKey(r.id) : completionReminderKey(r.id)));
+  open.forEach((r, i) => { if (values[i]) r.reminders = parseStored(values[i]); });
 }
 
 // Streams one of a request's stored attachments. The file must belong to that ledger entry.
