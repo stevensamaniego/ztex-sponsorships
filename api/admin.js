@@ -334,7 +334,9 @@ function ledgerRow(r) {
 
 function requestsPage(rows, { status, q }) {
   const count = s => rows.filter(r => r.status === s).length;
-  const approvedTotal = rows.filter(r => r.status === 'approved')
+  // Approved = everything leadership committed to, whether or not marketing has completed it yet.
+  // Completed is the subset already delivered. Clicking Approved still filters to approved-only rows.
+  const approvedTotal = rows.filter(wasApproved)
     .reduce((sum, r) => sum + (amounts(r).final || 0), 0);
   const completedTotal = rows.filter(r => r.status === 'completed')
     .reduce((sum, r) => sum + (amounts(r).final || 0), 0);
@@ -349,9 +351,9 @@ function requestsPage(rows, { status, q }) {
     const str = p.toString();
     return '/admin' + (str ? '?' + str : '');
   };
-  const stat = (s, label, sub) => `
+  const stat = (s, label, sub, n = s ? count(s) : rows.length) => `
     <a class="stat s-${s || 'all'}${(status || '') === (s || '') ? ' on' : ''}" href="${qs(s)}">
-      <div class="n">${s ? count(s) : rows.length}</div><div class="l">${label}</div>${sub ? `<div class="s">${sub}</div>` : ''}
+      <div class="n">${n}</div><div class="l">${label}</div>${sub ? `<div class="s">${sub}</div>` : ''}
     </a>`;
   const exportParams = new URLSearchParams({ export: 'csv' });
   if (status) exportParams.set('status', status);
@@ -363,7 +365,7 @@ function requestsPage(rows, { status, q }) {
     <p class="subtitle">Every request submitted through the portal and what happened to it. Click a row for full details.</p>
     <div class="stats">
       ${stat('pending', 'Pending', pendingTotal ? `${money(pendingTotal)} requested` : 'Nothing waiting')}
-      ${stat('approved', 'Approved', `${money(approvedTotal)} committed`)}
+      ${stat('approved', 'Approved', `${money(approvedTotal)} committed`, count('approved') + count('completed'))}
       ${stat('completed', 'Completed', `${money(completedTotal)} delivered`)}
       ${stat('denied', 'Denied')}
       ${stat('', 'All requests', count('expired') ? `${count('expired')} expired` : '')}
