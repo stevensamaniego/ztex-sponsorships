@@ -1,4 +1,3 @@
-const nodemailer = require('nodemailer');
 const { Redis } = require('@upstash/redis');
 const { INDEX_KEY, ledgerKey } = require('../lib/ledger');
 const { pendingKey, escapeHtml, parseStored } = require('../lib/security');
@@ -6,6 +5,7 @@ const { getSettings } = require('../lib/settings');
 const { tierLabel } = require('../lib/tiers');
 const { formatEventWhen } = require('../lib/calendar');
 const { cronAuthorized } = require('../lib/cron');
+const { createTransporter } = require('../lib/mail');
 
 const redis = Redis.fromEnv();
 
@@ -18,19 +18,6 @@ const BASE_URL = 'https://sponsorships.ztexconstruction.com';
 
 function reminderKey(token) {
   return `reminder:${token}`;
-}
-
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: 'smtp.office365.com',
-    port: 587,
-    secure: false,
-    auth: {
-      user: 'timeclock@ztexconstruction.com',
-      pass: process.env.SMTP_PASSWORD
-    },
-    tls: { ciphers: 'SSLv3' }
-  });
 }
 
 function money(value) {

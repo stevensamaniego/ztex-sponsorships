@@ -1,4 +1,3 @@
-const nodemailer = require('nodemailer');
 const { Redis } = require('@upstash/redis');
 const { SUBMISSION_TTL_SECONDS, isValidToken, pendingKey, decisionKey, escapeHtml, parseStored } = require('../lib/security');
 
@@ -9,21 +8,9 @@ const { loadAttachments } = require('../lib/files');
 const { buildInvite, formatEventWhen } = require('../lib/calendar');
 const { ledgerKey } = require('../lib/ledger');
 const { parseCookies, readSession, messagePage, sendPage } = require('../lib/approver');
+const { createTransporter } = require('../lib/mail');
 
 const redis = Redis.fromEnv();
-
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: 'smtp.office365.com',
-    port: 587,
-    secure: false,
-    auth: {
-      user: 'timeclock@ztexconstruction.com',
-      pass: process.env.SMTP_PASSWORD
-    },
-    tls: { ciphers: 'SSLv3' }
-  });
-}
 
 function stripDollar(val) {
   return val ? String(val).replace(/^\$+/, '') : '';
